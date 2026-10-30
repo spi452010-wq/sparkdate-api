@@ -334,6 +334,19 @@ describe('play verification', () => {
     expect(play.refunds).toHaveLength(0); expect(play.acks).not.toContain('tok-link-full');
     expect((await Booking.findById(full.b1.id))!.status).toBe('expired');
   });
+  it('concurrent admin links of one payment to two bookings: exactly one wins; acknowledged exactly once', async () => {
+    const a = await admin();
+    const { b1, b2, pay } = await unlinkedPayment('tok-link-race');
+    const res = await Promise.all([link(a, pay._id, b1.id), link(a, pay._id, b2.id)]);
+    expect(res.map((r: any) => r.status).sort()).toEqual([200, 409]);
+    const confirmed = await Booking.countDocuments({ _id: { $in: [b1.id, b2.id] }, status: 'confirmed' });
+    expect(confirmed).toBe(1);
+    const after = (await Payment.findById(pay._id))!;
+    expect(after.status).toBe('verified'); expect([b1.id, b2.id]).toContain(String(after.bookingId));
+    await q().runDue(Date.now() + 11 * 60_000, 'payment.ack');
+    expect(play.acks.filter((t) => t === 'tok-link-race')).toHaveLength(1);
+    expect(play.refunds).toHaveLength(0);
+  });
   it('admin link: acknowledge failure is retried by the payment.ack job', async () => {
     const a = await admin();
     const { b1, pay } = await unlinkedPayment('tok-link-ackfail');

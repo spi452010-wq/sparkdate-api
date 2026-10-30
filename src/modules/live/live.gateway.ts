@@ -7,7 +7,7 @@ import { AppError } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { getAuthUser } from '../users/users.service';
 import * as svc from './live.service';
-import { decisionPayload, eventPayload, pingPayload, sparkPayload } from './live.validator';
+import { dateLeavePayload, decisionPayload, eventPayload, pingPayload, sparkPayload } from './live.validator';
 import { Ack } from './live.types';
 
 /** Per-socket limits: every event 30 per 10 s; date:spark additionally 1 per 3 s. */
@@ -89,6 +89,7 @@ export function attachLive(http: HttpServer, opts: { redisUrl?: string; corsOrig
       socket.leave(`event:${eventId}`); events.delete(eventId);
       return svc.leave(uid, eventId);
     });
+    on('date:leave', dateLeavePayload, (p) => svc.dateLeave(uid, p));
     on('date:decision', decisionPayload, (p) => svc.decide(uid, p));
     on('date:spark', sparkPayload, (p) => svc.spark(uid, p));
     on('presence:ping', pingPayload, ({ eventId }) => svc.ping(uid, eventId ? [eventId].filter((e) => events.has(e)) : [...events]));

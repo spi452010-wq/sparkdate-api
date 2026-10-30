@@ -12,6 +12,7 @@ With `REDIS_URL` set the server uses the Redis adapter, so several API nodes can
 |---|---|---|
 | `event:join` | `{eventId}` | needs a confirmed booking (`NOT_BOOKED`); lobby must be open (`LOBBY_NOT_OPEN`, `EVENT_ENDED`, `EVENT_NOT_FOUND`). Sets `bookings.attendedAt` once. Max 3 events per socket (`TOO_MANY_EVENTS`). Ack includes current `lobby:state`. |
 | `event:leave` | `{eventId}` | `NOT_JOINED` if this socket did not join. Ends a running date as `early_disconnect`, partner gets `partner:left {reason:"left"}`. |
+| `date:leave` | `{dateId}` | ends only this date as `early_end` (`DATE_NOT_FOUND`, `DATE_NOT_ACTIVE` if already ended/over). Partner gets `partner:left {reason:"ended"}` and next-round priority; the caller stays in the event (keeps its existing priority, `attendedAt` unchanged) and is matched again next round. Do not send `event:leave`+`event:join` for this. |
 | `date:decision` | `{dateId, decision: "like"\|"pass"\|"save"}` | allowed from match until `decisionDeadline`; once per user (`ALREADY_DECIDED`, `DECISION_CLOSED`, `DATE_NOT_FOUND`). |
 | `date:spark` | `{dateId}` | relayed to partner as `date:spark {dateId}`; 1 per 3 s (`RATE_LIMITED`); `DATE_NOT_ACTIVE` after the call ends. |
 | `presence:ping` | `{}` or `{eventId}` | send every 10 s; presence expires after `LIVE_PRESENCE_TTL_SEC`. |
@@ -25,13 +26,16 @@ Payloads are strict (unknown keys -> `VALIDATION_ERROR`). Per-socket limit: 30 m
 | `match:found` | `{dateId, round, partner:{id, fullName, age, city, photoUrl, interests, bio}, livekit:{url, room, token}, startsAt, endsAt}` |
 | `round:started` | `{dateId, endsAt}` |
 | `round:ended` | `{dateId, decisionDeadline}` |
-| `partner:left` | `{dateId, reason: "disconnect"\|"left"}` (`disconnect` only after the reconnect grace) |
+| `partner:left` | `{dateId, reason: "disconnect"\|"left"\|"ended"}` (`ended` = partner used `date:leave`) (`disconnect` only after the reconnect grace) |
 | `connection:mutual` | `{connectionId, partner}` |
 | `no:match` | `{round}` |
 | `date:spark` | `{dateId}` |
 | `event:ended` | `{eventId, datesCompleted}` |
 
-All times are ISO server time. Clients sync via `GET /api/v1/live/time`.
+All times are ISO server time. Clients sync via `GET /api/v1/live/time` -> `{serverTime: <epoch ms>, iso}`.
+
+### Requeue (automatic)
+Being "in the queue" = being in the event's present set (`event:join`, kept alive by `presence:ping`). A date ending never removes anyone from it, so after **any** date end (normal round end, pass/like/decision-deadline expiry, `date:leave`, partner `partner:left`) the user is a candidate at the next `round.tick` with no new `event:join`. Users whose partner left early, or who sat out (`no:match`), are added to the priority set and paired first. Only `event:leave`, grace expiry after a disconnect, or presence TTL expiry (no pings) remove a user. `early_end` / `early_disconnect` dates count toward `datesCompleted` only if the call lasted at least the minimum; attendance (`attendedAt`) is set at join and is not affected.
 
 ### LiveKit
 One room per date: `evt_{eventId}_r{round}_{dateId}`. Identity = userId. Grant: join/publish/subscribe/data for that room only; no create/list/admin/record. TTL = round end + 60 s. Mint is retried twice; if it still fails both users get `no:match` and the date is not created.

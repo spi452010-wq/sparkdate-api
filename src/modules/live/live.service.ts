@@ -97,6 +97,20 @@ export async function leave(userId: string, eventId: string) {
   return {};
 }
 
+/**
+ * date:leave: end only the current date (early_end). The caller stays present in the event (attendedAt was set at join),
+ * keeps whatever queue priority it already had, and is matched again at the next round.tick without re-sending event:join.
+ * The partner gets partner:left {reason:'ended'} and is re-queued with priority.
+ */
+export async function dateLeave(userId: string, { dateId }: { dateId: string }) {
+  const d = await dateRepository.findById(dateId).lean();
+  if (!d || !inDate(d, userId)) throw new AppError(404, 'DATE_NOT_FOUND');
+  const ended = await endActiveDate(String(d.eventId), userId, 'ended', dateId);
+  if (!ended) throw new AppError(409, 'DATE_NOT_ACTIVE');
+  await broadcastLobby(String(d.eventId));
+  return {};
+}
+
 export async function ping(userId: string, eventIds: string[]) {
   const now = Date.now();
   for (const e of eventIds) await getLiveStore().touch(e, userId, now);
@@ -150,17 +164,20 @@ export async function graceExpired({ eventId, userId, token }: { eventId: string
 async function activeDate(eventId: string, userId: string) {
   return dateRepository.findOne({ eventId, endedAt: { $exists: false }, $or: [{ userA: userId }, { userB: userId }] }).sort({ round: -1 }).lean();
 }
-async function endActiveDate(eventId: string, userId: string, reason: LeftReason) {
+async function endActiveDate(eventId: string, userId: string, reason: LeftReason, dateId?: string) {
   const now = new Date();
-  const d = await dateRepository.findOneAndUpdate({ eventId, endedAt: { $exists: false }, $or: [{ userA: userId }, { userB: userId }] },
-    { $set: { endedAt: now, endReason: 'early_disconnect', leftBy: userId, leftReason: reason } }, { new: true, sort: { round: -1 } }).lean();
-  if (!d) return;
+  const filter: any = { eventId, endedAt: { $exists: false }, $or: [{ userA: userId }, { userB: userId }] };
+  if (dateId) Object.assign(filter, { _id: dateId, endsAt: { $gt: now } });
+  const d = await dateRepository.findOneAndUpdate(filter,
+    { $set: { endedAt: now, endReason: reason === 'ended' ? 'early_end' : 'early_disconnect', leftBy: userId, leftReason: reason } }, { new: true, sort: { round: -1 } }).lean();
+  if (!d) return null;
   const callSec = Math.max(0, (Math.min(+now, +d.endsAt) - +d.startsAt) / SEC);
   await dateRepository.updateOne({ _id: d._id }, { $set: { callSec } });
   const partner = other(d, userId);
   emitter.toUser(partner, 'partner:left', { dateId: String(d._id), reason });
   await getLiveStore().addPriority(eventId, partner); // re-queued (first) for the next round
   logger.info({ eventId, round: d.round, dateId: String(d._id), reason }, 'live date ended early');
+  return d;
 }
 
 async function onMutual(d: any) {
@@ -243,7 +260,7 @@ export async function roundEnd({ eventId, round: n }: { eventId: string; round: 
     await dateRepository.updateOne({ _id: d._id, endedAt: { $exists: false } }, { $set: { endedAt: d.endsAt, endReason: 'completed', callSec: (+d.endsAt - +d.startsAt) / SEC } });
   let early = 0; let deadline = 0;
   for (const d of await dateRepository.find({ eventId, round: n }).lean()) {
-    if (d.endReason === 'early_disconnect') early++;
+    if (d.endReason === 'early_disconnect' || d.endReason === 'early_end') early++;
     deadline = Math.max(deadline, +d.decisionDeadline);
     if ((d.callSec ?? 0) >= MIN_COMPLETED_SEC && (await dateRepository.updateOne({ _id: d._id, counted: false }, { $set: { counted: true } })).modifiedCount === 1)
       await addDateCompleted(eventId, [String(d.userA), String(d.userB)]);

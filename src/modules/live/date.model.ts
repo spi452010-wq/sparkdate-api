@@ -12,7 +12,7 @@ const dateSchema = new Schema({
   endsAt: { type: Date, required: true },
   decisionDeadline: { type: Date, required: true },
   endedAt: Date,
-  endReason: { type: String, enum: ['completed', 'early_disconnect'] },
+  endReason: { type: String, enum: ['completed', 'early_disconnect', 'early_end'] },
   leftBy: { type: Schema.Types.ObjectId, ref: 'User' },
   leftReason: { type: String, enum: ['disconnect', 'left'] },
   callSec: Number,

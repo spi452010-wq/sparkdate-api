@@ -5,7 +5,7 @@ export type EventPayload = z.infer<typeof eventPayload>;
 export type DecisionPayload = z.infer<typeof decisionPayload>;
 export type SparkPayload = z.infer<typeof sparkPayload>;
 export type Decision = DecisionPayload['decision'];
-export type LeftReason = 'disconnect' | 'left';
+export type LeftReason = 'disconnect' | 'left' | 'ended';
 export interface Ack { ok: boolean; error?: string; [k: string]: unknown }
 
 /** Server -> client fan-out. The gateway implements it over Socket.IO rooms (`user:{id}`, `event:{id}`). */

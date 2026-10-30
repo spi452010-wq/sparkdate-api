@@ -259,6 +259,45 @@ describe('rounds', () => {
   });
 });
 
+describe('date:leave and automatic requeue', () => {
+  it('date:leave ends only the current date (early_end); partner gets partner:left(ended); leaver stays present and attended', async () => {
+    const e = await mkEvent(); const [m, f] = [await mkUser('male'), await mkUser('female')];
+    const [sm, sf] = await joined(e, m, f); await tick(e, 1);
+    await until(() => got(sm, 'match:found').length === 1 && got(sf, 'match:found').length === 1);
+    const dateId = got(sm, 'match:found')[0].dateId;
+    expect(await emit(sm, 'date:leave', { dateId: 'x' })).toEqual({ ok: false, error: 'VALIDATION_ERROR' });
+    const outsider = await mkUser('male'); const so = await connect(outsider.token);
+    expect(await emit(so, 'date:leave', { dateId })).toEqual({ ok: false, error: 'DATE_NOT_FOUND' });
+    expect(await emit(sm, 'date:leave', { dateId })).toEqual({ ok: true });
+    await until(() => got(sf, 'partner:left').length === 1);
+    expect(got(sf, 'partner:left')[0]).toEqual({ dateId, reason: 'ended' });
+    expect(await LiveDate.findById(dateId)).toMatchObject({ endReason: 'early_end', leftReason: 'ended' });
+    expect(await emit(sm, 'date:leave', { dateId })).toEqual({ ok: false, error: 'DATE_NOT_ACTIVE' });
+    expect((await store.present(e, 0)).map((p) => p.userId).sort()).toEqual([m.id, f.id].sort()); // both still in the event
+    expect(await store.priority(e)).toEqual([f.id]);
+    expect((await Booking.findOne({ eventId: e, userId: m.id }))!.attendedAt).toBeInstanceOf(Date); // early_end counts as attended
+  });
+  it('every date end (normal end + pass, decision deadline, date:leave, partner:left) requeues automatically: next round matches without a new event:join', async () => {
+    const e = await mkEvent();
+    const [m1, m2, f1, f2] = [await mkUser('male'), await mkUser('male'), await mkUser('female'), await mkUser('female')];
+    const socks = await joined(e, m1, m2, f1, f2); const [s1, s2] = socks;
+    await tick(e, 1);
+    await until(() => socks.every((s) => got(s, 'match:found').length === 1));
+    const d1 = got(s1, 'match:found')[0].dateId; const d2 = got(s2, 'match:found')[0].dateId;
+    expect(await emit(s1, 'date:leave', { dateId: d1 })).toEqual({ ok: true }); // m1 leaves; his partner gets partner:left
+    await endRound(); // m2's date ends normally
+    expect(await emit(s2, 'date:decision', { dateId: d2, decision: 'pass' })).toEqual({ ok: true }); // other side lets the deadline expire
+    await decideRound();
+    await tick(e, 2);
+    await until(() => socks.every((s) => got(s, 'match:found').length === 2));
+    const r2 = await LiveDate.find({ eventId: e, round: 2 });
+    expect(r2).toHaveLength(2); // all four (incl. the date:leave pair) are matched again; nobody re-sent event:join
+    const r1Keys = (await LiveDate.find({ eventId: e, round: 1 })).map((d) => d.pairKey);
+    for (const d of r2) expect(r1Keys).not.toContain(d.pairKey);
+    expect(socks.every((s) => got(s, 'partner:left').length <= 1)).toBe(true);
+  });
+});
+
 describe('reconnect grace', () => {
   async function inDate() {
     const e = await mkEvent(); const [m, f] = [await mkUser('male'), await mkUser('female')];
