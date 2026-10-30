@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '../../middleware/validate';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import * as c from './adminEvents.controller';
-import * as v from './adminEvents.validation';
+import * as v from './adminEvents.validator';
 
 const r = Router();
 const idParam = validate(v.idParams, 'params');

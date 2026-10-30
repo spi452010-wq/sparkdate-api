@@ -4,10 +4,10 @@ import request from 'supertest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../src/app';
-import { setOtpSender } from '../src/modules/auth/whatsapp';
-import { setGoogleVerifier } from '../src/modules/auth/auth.routes';
+import { setOtpSender } from '../src/integrations/whatsapp';
+import { setGoogleVerifier } from '../src/integrations/google';
 import { Otp } from '../src/modules/auth/otp.model';
-import { User } from '../src/modules/auth/user.model';
+import { User } from '../src/modules/users/user.model';
 import { AppError } from '../src/utils/errors';
 
 let mongo: MongoMemoryServer; const app = createApp(); const sent: Record<string, string> = {};

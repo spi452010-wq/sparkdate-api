@@ -1,7 +1,7 @@
 import multer from 'multer';
 import { env } from '../../config/env';
 import { asyncHandler, AppError } from '../../utils/errors';
-import { MAX_UPLOAD_BYTES } from './media.validation';
+import { MAX_UPLOAD_BYTES } from './media.validator';
 import * as svc from './media.service';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });

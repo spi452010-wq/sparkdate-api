@@ -5,7 +5,7 @@ export const REFRESH_COOKIE = 'sd_rt';
 export const CSRF_COOKIE = 'csrf_token';
 import { env } from '../config/env';
 import { AppError } from '../utils/errors';
-import { User } from '../modules/auth/user.model';
+import { userRepository } from '../modules/users/users.repository';
 
 export type Role = 'user' | 'host' | 'admin';
 export const requireAuth = async (req: any, _res: any, next: any) => {
@@ -25,7 +25,7 @@ export const requireAuth = async (req: any, _res: any, next: any) => {
     let payload: any;
     try { payload = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }); }
     catch { throw new AppError(401, 'TOKEN_INVALID'); }
-    const user = await User.findById(payload.sub).select('role status');
+    const user = await userRepository.findById(payload.sub).select('role status');
     if (!user) throw new AppError(401, 'UNAUTHORIZED');
     if (user.status === 'blocked') throw new AppError(403, 'ACCOUNT_BLOCKED');
     req.user = { id: String(user._id), role: user.role };

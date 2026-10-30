@@ -3,9 +3,8 @@ import rateLimit from 'express-rate-limit';
 import { validate } from '../../middleware/validate';
 import { env } from '../../config/env';
 import * as c from './auth.controller';
-import * as v from './auth.validation';
+import * as v from './auth.validator';
 
-export { setGoogleVerifier } from './auth.service';
 
 const r = Router();
 const ipLimiter = rateLimit({ windowMs: 15 * 60_000, limit: env.AUTH_IP_LIMIT_PER_15MIN, standardHeaders: true, legacyHeaders: false,

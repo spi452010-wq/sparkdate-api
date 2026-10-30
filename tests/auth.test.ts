@@ -5,10 +5,10 @@ import request from 'supertest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../src/app';
-import { setOtpSender } from '../src/modules/auth/whatsapp';
-import { setGoogleVerifier } from '../src/modules/auth/auth.routes';
+import { setOtpSender } from '../src/integrations/whatsapp';
+import { setGoogleVerifier } from '../src/integrations/google';
 import { Otp } from '../src/modules/auth/otp.model';
-import { User } from '../src/modules/auth/user.model';
+import { User } from '../src/modules/users/user.model';
 import { AppError } from '../src/utils/errors';
 
 let mongo: MongoMemoryServer; const app = createApp(); const sent: Record<string, string> = {};
@@ -161,7 +161,7 @@ describe('Media', () => {
     const b = await login();
     const withExif = await sharp({ create: { width: 20, height: 20, channels: 3, background: '#0f0' } }).jpeg().withMetadata({ exif: { IFD0: { Copyright: 'secret' } } }).toBuffer();
     const k = (await request(app).post('/api/v1/media/photos').set('Authorization', `Bearer ${b.accessToken}`).attach('file', withExif, 'e.jpg').expect(201)).body.key;
-    const { storage } = require('../src/modules/media/storage');
+    const { storage } = require('../src/integrations/storage');
     expect((await sharp(storage.absolutePath(k)).metadata()).exif).toBeUndefined();
   });
 });

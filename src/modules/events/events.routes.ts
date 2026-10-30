@@ -2,9 +2,8 @@ import { Router } from 'express';
 import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as c from './events.controller';
-import * as v from './events.validation';
+import * as v from './events.validator';
 
-export { appEvent, VISIBLE } from './event.mapper';
 
 const r = Router();
 const idParam = validate(v.idParams, 'params');

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '../../middleware/validate';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import * as c from './refunds.controller';
-import { bookingIdParams, idParams, paymentsQuery, refundsQuery, rejectBody } from './refunds.validation';
+import { bookingIdParams, idParams, paymentsQuery, refundsQuery, rejectBody } from './refunds.validator';
 
 // Money operations are admin-only (hosts cannot refund or cancel paid events).
 const r = Router();

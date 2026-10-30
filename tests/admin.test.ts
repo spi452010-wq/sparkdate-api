@@ -5,9 +5,10 @@ import request from 'supertest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../src/app';
-import { User } from '../src/modules/auth/user.model';
+import { User } from '../src/modules/users/user.model';
 import { hashPassword } from '../src/modules/auth/password';
-import { Event, reserveSeat } from '../src/modules/events/event.model';
+import { Event } from '../src/modules/events/event.model';
+import { reserveSeat } from '../src/modules/events/events.repository';
 
 let mongo: MongoMemoryServer; const app = createApp();
 beforeAll(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); });

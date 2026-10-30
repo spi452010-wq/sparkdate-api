@@ -19,9 +19,3 @@ eventSchema.index({ createdBy: 1, startsAt: -1 });
 eventSchema.index({ status: 1, city: 1, startsAt: 1 });
 export const Event = model('Event', eventSchema);
 
-// Atomic seat hold: never exceeds capacity, even under concurrency; only future published events.
-export const reserveSeat = (eventId: any, gender: 'male' | 'female') =>
-  Event.updateOne({ _id: eventId, status: 'published', startsAt: { $gt: new Date() }, $expr: { $lt: [`$booked.${gender}`, `$capacity.${gender}`] } }, { $inc: { [`booked.${gender}`]: 1 } })
-    .then((r) => r.modifiedCount === 1);
-export const releaseSeat = (eventId: any, gender: 'male' | 'female') =>
-  Event.updateOne({ _id: eventId, [`booked.${gender}`]: { $gt: 0 } }, { $inc: { [`booked.${gender}`]: -1 } });

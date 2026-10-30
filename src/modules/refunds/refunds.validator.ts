@@ -1,7 +1,6 @@
 import { z } from 'zod';
-import { Types } from 'mongoose';
 
-export const objectId = z.string().refine((s) => Types.ObjectId.isValid(s), 'Invalid id');
+import { objectId } from '../../utils/validators';
 const qParam = z.string().trim().min(1).max(80).optional();
 const paging = { page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(100).default(20) };
 export const refundsQuery = z.object({ status: z.enum(['requested', 'processing', 'processed', 'rejected', 'failed']).optional(), q: qParam, ...paging });

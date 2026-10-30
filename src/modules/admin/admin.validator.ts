@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { Types } from 'mongoose';
-export const objectId = z.string().refine((s) => Types.ObjectId.isValid(s), 'Invalid id');
+import { objectId } from '../../utils/validators';
 export const idParams = z.object({ id: objectId });
 export const listUsersQuery = z.object({
   verification: z.enum(['none', 'pending', 'approved', 'rejected']).optional(),

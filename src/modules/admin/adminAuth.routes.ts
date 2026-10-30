@@ -4,7 +4,7 @@ import { env } from '../../config/env';
 import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as c from './adminAuth.controller';
-import * as v from './adminAuth.validation';
+import * as v from './adminAuth.validator';
 
 const r = Router();
 const loginLimiter = rateLimit({ windowMs: 15 * 60_000, limit: env.ADMIN_LOGIN_IP_LIMIT_PER_15MIN, standardHeaders: true, legacyHeaders: false,

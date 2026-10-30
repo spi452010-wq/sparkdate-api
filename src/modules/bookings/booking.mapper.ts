@@ -1,4 +1,4 @@
-import { appEvent } from '../events/event.mapper';
+import { appEvent } from '../events/events.service';
 // Response mapper (pure, no DB); shared by bookings, events and payments.
 export const bookingOut = (b: any, ev?: any, g?: string | null) => ({
   id: String(b._id), eventId: String(b.eventId?._id ?? b.eventId), status: b.status, gender: b.gender, amountInPaise: b.amountInPaise,

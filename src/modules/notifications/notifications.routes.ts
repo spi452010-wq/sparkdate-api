@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as c from './notifications.controller';
-import { listQuery, readBody } from './notifications.validation';
+import { listQuery, readBody } from './notifications.validator';
 
 /** /api/v1/notifications (in-app list) */
 export const notifications = Router();

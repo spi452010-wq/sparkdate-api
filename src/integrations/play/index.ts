@@ -15,7 +15,7 @@ export interface SubscriptionPurchase {
 }
 export interface VoidedPurchase { purchaseToken: string; orderId?: string; productType?: number }
 
-/** Thin wrapper over the Google Play Developer API so tests can inject a fake. */
+/** Google Play Developer API client. Thin wrapper over the Google Play Developer API so tests can inject a fake. */
 export interface PlayClient {
   getProduct(productId: string, token: string): Promise<ProductPurchase>;
   acknowledgeProduct(productId: string, token: string): Promise<void>;

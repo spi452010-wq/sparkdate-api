@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '../../middleware/validate';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import * as c from './admin.controller';
-import * as v from './admin.validation';
+import * as v from './admin.validator';
 
 const r = Router();
 r.use(requireAuth, requireRole('admin'));

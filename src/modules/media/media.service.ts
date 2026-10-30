@@ -1,9 +1,9 @@
 import sharp from 'sharp';
 import crypto from 'crypto';
 import { AppError } from '../../utils/errors';
-import { storage, isValidKey } from './storage';
+import { storage, isValidKey } from '../../integrations/storage';
 import { checkSig, signedUrl } from './signing';
-import { User } from '../auth/user.model';
+import { userRepository } from '../users/users.repository';
 
 async function processImage(buf?: Buffer) {
   if (!buf?.length) throw new AppError(400, 'FILE_REQUIRED');
@@ -27,7 +27,7 @@ export async function uploadImage(kind: 'photos' | 'selfies', userId: string, bu
 }
 
 export async function ownSelfieUrl(userId: string) {
-  const u = await User.findById(userId).select('verification.selfieKey');
+  const u = await userRepository.findById(userId).select('verification.selfieKey');
   if (!u?.verification?.selfieKey) throw new AppError(404, 'NOT_FOUND');
   return { url: signedUrl(u.verification.selfieKey) };
 }
@@ -39,3 +39,4 @@ export function resolveSignedKey(kind: string, uid: string, file: string, exp: n
   return key;
 }
 export const absolutePath = (key: string) => storage.absolutePath(key);
+export { signedUrl } from './signing';

@@ -2,9 +2,8 @@ import { Router } from 'express';
 import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as c from './profile.controller';
-import * as v from './profile.validation';
+import * as v from './profile.validator';
 
-export { requireCompletedProfile } from './profile.controller';
 
 const r = Router();
 r.use(requireAuth);

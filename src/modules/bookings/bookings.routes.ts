@@ -3,10 +3,8 @@ import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import { requireIdempotencyKey } from '../../middleware/idempotency';
 import * as c from './bookings.controller';
-import { createBookingBody, idParams, refundRequestBody } from './bookings.validation';
+import { createBookingBody, idParams, refundRequestBody } from './bookings.validator';
 
-export { bookingOut } from './booking.mapper'; // back-compat
-export { notifications } from '../notifications/notifications.routes'; // back-compat
 
 /** /api/v1/bookings */
 export const bookings = Router();

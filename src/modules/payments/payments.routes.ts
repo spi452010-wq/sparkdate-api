@@ -3,7 +3,7 @@ import { validate } from '../../middleware/validate';
 import { requireAuth } from '../../middleware/auth';
 import { requireIdempotencyKey } from '../../middleware/idempotency';
 import * as c from './payments.controller';
-import { verifyBody } from './payments.validation';
+import { verifyBody } from './payments.validator';
 
 export const payments = Router();
 payments.use(requireAuth);
