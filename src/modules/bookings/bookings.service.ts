@@ -133,3 +133,22 @@ export async function savedEvents(userId: string) {
   return { items: rx.map((x) => byId.get(String(x.eventId))).filter(Boolean).map((e) => appEvent(e, u?.profile?.gender)) };
 }
 export { bookingOut } from './booking.mapper';
+
+// ---------- live session (Sprint 3) ----------
+/** The caller's confirmed booking for an event, or null. */
+export async function findConfirmedBooking(eventId: string, userId: string) {
+  const b = await bookingRepository.findOne({ eventId, userId, status: 'confirmed' }).select('_id gender attendedAt').lean();
+  return b ? { id: String(b._id), gender: b.gender as 'male' | 'female', attendedAt: b.attendedAt ?? null } : null;
+}
+/** Sets attendedAt on the first join only (atomic, re-joins keep the original time). */
+export async function markAttended(eventId: string, userId: string, at = new Date()) {
+  await bookingRepository.updateOne({ eventId, userId, status: 'confirmed', attendedAt: { $exists: false } }, { $set: { attendedAt: at } });
+}
+/** +1 datesCompleted for each user (called once per completed date, guarded by the date's `counted` flag). */
+export async function addDateCompleted(eventId: string, userIds: string[]) {
+  await bookingRepository.updateMany({ eventId, userId: { $in: userIds }, status: { $in: ['confirmed', 'refund_requested'] } }, { $inc: { datesCompleted: 1 } });
+}
+export async function datesCompletedByUser(eventId: string) {
+  const rows = await bookingRepository.find({ eventId, status: 'confirmed', attendedAt: { $exists: true } }).select('userId datesCompleted').lean();
+  return new Map(rows.map((b) => [String(b.userId), b.datesCompleted ?? 0]));
+}

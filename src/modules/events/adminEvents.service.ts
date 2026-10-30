@@ -4,6 +4,7 @@ import { adminEventOut as out } from './event.mapper';
 import { paidRule } from './adminEvents.validator';
 import { eventRepository } from './events.repository';
 import { bookingRepository } from '../bookings/bookings.repository';
+import { scheduleTimeline } from './events.service';
 
 // Admin can move anything; live/ended are normally set by the live-session module.
 const ALLOWED: Record<string, string[]> = { draft: ['published', 'cancelled'], published: ['draft', 'cancelled', 'live'], live: ['ended'], ended: [], cancelled: [] };
@@ -24,7 +25,9 @@ export async function get(a: Actor, id: string) {
 
 export async function create(a: Actor, input: any) {
   const body = { ...input, playProductId: input.priceInPaise > 0 ? input.playProductId : null };
-  return out(await eventRepository.create({ ...body, booked: { male: 0, female: 0 }, createdBy: a.id }));
+  const e = await eventRepository.create({ ...body, booked: { male: 0, female: 0 }, createdBy: a.id });
+  await scheduleTimeline(e);
+  return out(e);
 }
 
 export async function update(a: Actor, id: string, patch: any) {
@@ -49,6 +52,7 @@ export async function update(a: Actor, id: string, patch: any) {
   }
   const e = await eventRepository.findOneAndUpdate(filter, { $set: set }, { new: true, runValidators: true });
   if (!e) throw new AppError(409, 'CAPACITY_BELOW_BOOKED', 'Capacity cannot be below seats already booked', { booked: cur.booked });
+  await scheduleTimeline(e);
   return out(e);
 }
 
