@@ -8,10 +8,12 @@
     "start": "node dist/server.js",
     "test": "jest --runInBand",
     "create-admin": "ts-node-dev --transpile-only src/scripts/createAdmin.ts",
-    "create-admin:prod": "node dist/scripts/createAdmin.js"
+    "create-admin:prod": "node dist/scripts/createAdmin.js",
+    "load:live": "ts-node-dev --transpile-only scripts/loadLive.ts"
   },
   "dependencies": {
     "@googleapis/androidpublisher": "^42.2.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "argon2": "^0.45.1",
     "bullmq": "^6.5.1",
     "cookie-parser": "^1.4.7",
@@ -24,10 +26,12 @@
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
+    "livekit-server-sdk": "^2.19.2",
     "mongoose": "^8.24.7",
     "multer": "^2.5.0",
     "pino": "^10.4.0",
     "sharp": "^0.35.5",
+    "socket.io": "^4.8.4",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -41,6 +45,7 @@
     "@types/supertest": "^7.2.1",
     "jest": "^30.5.2",
     "mongodb-memory-server": "^11.3.0",
+    "socket.io-client": "^4.8.4",
     "supertest": "^7.3.1",
     "ts-jest": "^29.4.15",
     "ts-node-dev": "^2.0.0",

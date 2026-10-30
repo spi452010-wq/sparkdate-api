@@ -33,6 +33,14 @@ const schema = z.object({
   PENDING_PURCHASE_HOLD_MIN: z.coerce.number().int().min(1).max(120).default(30),
   AUTO_REFUND_NO_MATCH: z.enum(['true', 'false']).default('false'),
   FCM_SA_JSON_PATH: z.string().default(''),
+  // Sprint 3: live session. LIVEKIT_* optional in dev/test (placeholder tokens); required in production (see below).
+  LIVEKIT_URL: z.string().default(''),
+  LIVEKIT_API_KEY: z.string().default(''),
+  LIVEKIT_API_SECRET: z.string().default(''),
+  ROUND_BREAK_SEC: z.coerce.number().int().min(5).max(600).default(30),
+  DECISION_WINDOW_SEC: z.coerce.number().int().min(10).max(600).default(60),
+  RECONNECT_GRACE_SEC: z.coerce.number().int().min(5).max(120).default(20),
+  LIVE_PRESENCE_TTL_SEC: z.coerce.number().int().min(15).max(300).default(30),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -95,6 +103,21 @@ if (env.NODE_ENV === 'production') {
   const missing = findMissingProdConfig(env as unknown as Record<string, string>);
   if (missing.length) {
     console.error('Refusing to start: missing or unsafe production config:', missing);
+    process.exit(1);
+  }
+}
+
+/** Names (never values) of Sprint 3 LiveKit settings that are missing or unsafe for production. */
+export function findMissingLiveConfig(e: Record<string, string | undefined>): string[] {
+  const bad = (['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const).filter((k) => !e[k] || PLACEHOLDER_RE.test(e[k]!)) as string[];
+  if (e.LIVEKIT_URL && !bad.includes('LIVEKIT_URL') && !/^wss:\/\//.test(e.LIVEKIT_URL)) bad.push('LIVEKIT_URL');
+  if (e.LIVEKIT_API_SECRET && !bad.includes('LIVEKIT_API_SECRET') && e.LIVEKIT_API_SECRET.length < 32) bad.push('LIVEKIT_API_SECRET');
+  return bad;
+}
+if (env.NODE_ENV === 'production') {
+  const missing = findMissingLiveConfig(env as unknown as Record<string, string>);
+  if (missing.length) {
+    console.error('Refusing to start: missing or unsafe LiveKit config:', missing);
     process.exit(1);
   }
 }
