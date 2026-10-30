@@ -17,6 +17,7 @@ const ALLOWED: Record<string, string[]> = { draft: ['published', 'cancelled'], p
 const fields = {
   title: z.string().trim().min(3).max(80),
   description: z.string().trim().max(1000).default(''),
+  city: z.string().trim().min(1).max(60).optional(),
   startsAt: z.coerce.date(),
   endsAt: z.coerce.date().optional(),
   roundMinutes: z.number().int().min(1).max(30).default(3),
@@ -33,7 +34,7 @@ const createSchema = z.object(fields).strict()
   .refine((e) => !e.status || ['draft', 'published'].includes(e.status), { path: ['status'], message: 'New events start as draft or published' });
 const patchSchema = z.object(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, (v as any).optional?.() ?? v]))).strict();
 
-const out = (e: any) => ({ id: String(e._id), title: e.title, description: e.description, startsAt: e.startsAt, endsAt: e.endsAt, roundMinutes: e.roundMinutes,
+const out = (e: any) => ({ id: String(e._id), title: e.title, city: e.city, description: e.description, startsAt: e.startsAt, endsAt: e.endsAt, roundMinutes: e.roundMinutes,
   priceInPaise: e.priceInPaise, playProductId: e.playProductId ?? null, status: e.status, capacity: e.capacity, booked: e.booked });
 // Hosts only see and edit their own events.
 const scope = (req: any) => (req.user.role === 'admin' ? {} : { createdBy: req.user.id });
@@ -67,6 +68,8 @@ r.patch('/:id', idParam, validate(patchSchema), asyncHandler(async (req, res) =>
     throw new AppError(409, 'INVALID_STATUS_TRANSITION', `${cur.status} -> ${req.body.status}`);
   if (['live', 'ended'].includes(cur.status) && (req.body.capacity || req.body.startsAt || req.body.priceInPaise !== undefined || req.body.playProductId !== undefined))
     throw new AppError(409, 'EVENT_LOCKED', 'Cannot change schedule, price or capacity once live');
+  if (req.body.status === 'cancelled' && (await Booking.exists({ eventId: cur._id, status: { $in: ['pending', 'confirmed', 'refund_requested'] } })))
+    throw new AppError(409, 'USE_CANCEL_ENDPOINT', 'Event has bookings: use POST /admin/events/:id/cancel so holds are released and payments refunded');
   const set: any = { ...req.body };
   if (next.priceInPaise === 0) set.playProductId = null;
   const filter: any = { _id: cur._id };

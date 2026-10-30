@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from '../../middleware/auth';
 import { asyncHandler, AppError } from '../../utils/errors';
 import { User } from '../auth/user.model';
 import { Event } from '../events/event.model';
+import { Booking } from '../events/booking.model';
 import { signedUrl } from '../media/signing';
 
 const r = Router();
@@ -29,11 +30,11 @@ r.get('/users', validate(z.object({
 }));
 
 r.get('/stats', asyncHandler(async (_req, res) => {
-  const [totalUsers, pendingVerifications, publishedEvents, liveEvents] = await Promise.all([
+  const [totalUsers, pendingVerifications, publishedEvents, liveEvents, pendingRefunds] = await Promise.all([
     User.countDocuments({ role: 'user' }), User.countDocuments({ 'verification.status': 'pending' }),
-    Event.countDocuments({ status: 'published' }), Event.countDocuments({ status: 'live' })]);
-  // Reports and refunds modules arrive in later sprints.
-  res.json({ totalUsers, pendingVerifications, publishedEvents, liveEvents, openReports: 0, pendingRefunds: 0 });
+    Event.countDocuments({ status: 'published' }), Event.countDocuments({ status: 'live' }), Booking.countDocuments({ 'refund.status': { $in: ['requested', 'failed'] } })]);
+  // Reports module arrives in a later sprint.
+  res.json({ totalUsers, pendingVerifications, publishedEvents, liveEvents, openReports: 0, pendingRefunds });
 }));
 
 r.post('/users/:id/verification', validate(z.object({ id: objectId }), 'params'),

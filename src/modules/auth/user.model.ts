@@ -27,6 +27,9 @@ const userSchema = new Schema({
     reviewedAt: Date,
     reason: String,
   },
+  chatPassUntil: Date,
+  chatPass: { productId: String, purchaseToken: String, state: String, autoRenewing: Boolean, updatedAt: Date },
+  fcmTokens: { type: [String], default: [], select: false },
 }, { timestamps: true });
 
 userSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { phone: { $type: 'string' } } });
@@ -34,6 +37,7 @@ userSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email:
 userSchema.index({ googleSub: 1 }, { unique: true, partialFilterExpression: { googleSub: { $type: 'string' } } });
 userSchema.index({ 'verification.status': 1, createdAt: -1 });
 userSchema.index({ status: 1 });
+userSchema.index({ 'chatPass.purchaseToken': 1 }, { partialFilterExpression: { 'chatPass.purchaseToken': { $type: 'string' } } });
 userSchema.index({ 'profile.fullName': 1 });
 
 export type UserDoc = InferSchemaType<typeof userSchema>;

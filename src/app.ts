@@ -9,6 +9,12 @@ import mediaRoutes from './modules/media/media.routes';
 import adminRoutes from './modules/admin/admin.routes';
 import adminAuthRoutes from './modules/admin/adminAuth.routes';
 import adminEventRoutes from './modules/events/adminEvents.routes';
+import eventRoutes from './modules/events/events.routes';
+import { bookings, me, notifications } from './modules/bookings/bookings.routes';
+import { payments, subscriptions } from './modules/payments/payments.routes';
+import webhookRoutes from './modules/webhooks/play.routes';
+import adminPaymentRoutes from './modules/refunds/adminPayments.routes';
+import './jobs/handlers';
 import { errorHandler } from './middleware/error';
 import { AppError } from './utils/errors';
 
@@ -26,6 +32,14 @@ export function createApp() {
   app.use('/api/v1/media', mediaRoutes);
   app.use('/api/v1/admin/auth', adminAuthRoutes);
   app.use('/api/v1/admin/events', adminEventRoutes);
+  app.use('/api/v1/events', eventRoutes);
+  app.use('/api/v1/bookings', bookings);
+  app.use('/api/v1/me', me);
+  app.use('/api/v1/notifications', notifications);
+  app.use('/api/v1/payments', payments);
+  app.use('/api/v1/subscriptions', subscriptions);
+  app.use('/api/v1/webhooks', webhookRoutes);
+  app.use('/api/v1/admin', adminPaymentRoutes);
   app.use('/api/v1/admin', adminRoutes);
   app.use((_req, _res, next) => next(new AppError(404, 'NOT_FOUND')));
   app.use(errorHandler);
