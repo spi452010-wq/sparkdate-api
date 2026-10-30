@@ -22,6 +22,17 @@ const schema = z.object({
   AUTH_IP_LIMIT_PER_15MIN: z.coerce.number().int().positive().default(30),
   ADMIN_LOGIN_IP_LIMIT_PER_15MIN: z.coerce.number().int().positive().default(10),
   CORS_ORIGINS: z.string().default(''),
+  // Sprint 2: Play Billing, Pub/Sub RTDN, jobs, notifications. Optional in dev/test; required in production (see below).
+  PLAY_PACKAGE_NAME: z.string().default(''),
+  GOOGLE_PLAY_SA_JSON_PATH: z.string().default(''),
+  CHAT_PASS_PRODUCT_ID: z.string().regex(/^[a-z0-9_.]{1,100}$/).default('chat_pass_monthly'),
+  PUBSUB_PUSH_AUDIENCE: z.string().default(''),
+  PUBSUB_SA_EMAIL: z.string().default(''),
+  REDIS_URL: z.string().default(''),
+  BOOKING_HOLD_MIN: z.coerce.number().int().min(1).max(60).default(10),
+  PENDING_PURCHASE_HOLD_MIN: z.coerce.number().int().min(1).max(120).default(30),
+  AUTO_REFUND_NO_MATCH: z.enum(['true', 'false']).default('false'),
+  FCM_SA_JSON_PATH: z.string().default(''),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -63,4 +74,27 @@ if (env.NODE_ENV === 'production') {
 if (env.NODE_ENV === 'production' && env.WHATSAPP_PROVIDER === 'console') {
   console.error('WHATSAPP_PROVIDER=console is not allowed in production');
   process.exit(1);
+}
+
+export const PROD_REQUIRED = ['PLAY_PACKAGE_NAME', 'GOOGLE_PLAY_SA_JSON_PATH', 'PUBSUB_PUSH_AUDIENCE', 'PUBSUB_SA_EMAIL', 'REDIS_URL'] as const;
+/** Names (never values) of Sprint 2 settings that are missing or unsafe for production. */
+export function findMissingProdConfig(e: Record<string, string | undefined>, cwd = process.cwd()): string[] {
+  const bad: string[] = PROD_REQUIRED.filter((k) => !e[k] || PLACEHOLDER_RE.test(e[k]!));
+  // Service account keys must live outside the repo / deploy directory.
+  for (const k of ['GOOGLE_PLAY_SA_JSON_PATH', 'FCM_SA_JSON_PATH'] as const) {
+    const v = e[k];
+    if (v && !bad.includes(k)) {
+      const abs = require('path').resolve(cwd, v) as string;
+      if (abs === cwd || abs.startsWith(cwd + require('path').sep)) bad.push(k);
+    }
+  }
+  if (e.PUBSUB_PUSH_AUDIENCE && !/^https:\/\//.test(e.PUBSUB_PUSH_AUDIENCE) && !bad.includes('PUBSUB_PUSH_AUDIENCE')) bad.push('PUBSUB_PUSH_AUDIENCE');
+  return bad;
+}
+if (env.NODE_ENV === 'production') {
+  const missing = findMissingProdConfig(env as unknown as Record<string, string>);
+  if (missing.length) {
+    console.error('Refusing to start: missing or unsafe production config:', missing);
+    process.exit(1);
+  }
 }
