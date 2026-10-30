@@ -8,6 +8,7 @@ const r = Router();
 r.use(requireAuth, requireRole('admin'));
 r.get('/users', validate(v.listUsersQuery, 'query'), c.listUsers);
 r.get('/stats', c.stats);
+r.get('/users/:id/bookings', validate(v.idParams, 'params'), validate(v.userBookingsQuery, 'query'), c.userBookings);
 r.post('/users/:id/verification', validate(v.idParams, 'params'), validate(v.verificationDecisionBody), c.decideVerification);
 r.post('/users/:id/status', validate(v.idParams, 'params'), validate(v.userStatusBody), c.setUserStatus);
 export default r;

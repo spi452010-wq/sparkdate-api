@@ -110,6 +110,30 @@ describe('admin events', () => {
     await h.agent.get('/api/v1/admin/users').expect(403);
     await h.agent.get('/api/v1/admin/stats').expect(403);
   });
+  it('GET /admin/users/:id/bookings: 401 / 403 / 400 and newest-first paginated list with event info', async () => {
+    const { Booking } = require('../src/modules/bookings/booking.model');
+    const u = await User.create({ phone: '+919811113333', profile: { fullName: 'Asha' } });
+    const e1 = await Event.create({ title: 'Old', city: 'Indore', startsAt: new Date(Date.now() + 86400_000), capacity: { male: 2, female: 2 }, playProductId: 'event_ticket_199', createdBy: u._id });
+    const e2 = await Event.create({ title: 'New', city: 'Pune', startsAt: new Date(Date.now() + 2 * 86400_000), capacity: { male: 2, female: 2 }, createdBy: u._id });
+    await Booking.create({ eventId: e1._id, userId: u._id, gender: 'female', status: 'confirmed', createdAt: new Date(Date.now() - 60_000) });
+    await Booking.create({ eventId: e2._id, userId: u._id, gender: 'female', status: 'pending' });
+    await Booking.create({ eventId: e2._id, userId: new mongoose.Types.ObjectId(), gender: 'male', status: 'pending' });
+    const url = `/api/v1/admin/users/${u._id}/bookings`;
+    await request(app).get(url).expect(401);
+    await (await session('host@sd.in')).agent.get(url).expect(403);
+    const { agent } = await session();
+    await agent.get('/api/v1/admin/users/not-an-id/bookings').expect(400);
+    await agent.get(`${url}?status=nope`).expect(400);
+    await agent.get(`${url}?limit=500`).expect(400);
+    const all = (await agent.get(url).expect(200)).body;
+    expect(all.total).toBe(2); expect(all.items.map((i: any) => i.event.title)).toEqual(['New', 'Old']);
+    expect(all.items[1].event).toMatchObject({ id: String(e1._id), title: 'Old', playProductId: 'event_ticket_199' });
+    expect(all.items[1].event.startsAt).toBeDefined();
+    const p2 = (await agent.get(`${url}?limit=1&page=2`).expect(200)).body;
+    expect(p2).toMatchObject({ total: 2, page: 2, limit: 1 }); expect(p2.items[0].event.title).toBe('Old');
+    const conf = (await agent.get(`${url}?status=confirmed`).expect(200)).body;
+    expect(conf.total).toBe(1); expect(conf.items[0].status).toBe('confirmed');
+  });
   it('users q search and stats', async () => {
     const { agent } = await session();
     await User.create({ phone: '+919811112222', profile: { fullName: 'Riya Sharma' } });

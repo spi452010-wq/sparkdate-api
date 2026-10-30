@@ -134,6 +134,21 @@ export async function savedEvents(userId: string) {
 }
 export { bookingOut } from './booking.mapper';
 
+/** Admin: one user's bookings, newest first (index userId+createdAt). Read-only. */
+export async function adminUserBookings(userId: string, { status, page, limit }: { status?: string; page: number; limit: number }) {
+  const filter: any = { userId }; if (status) filter.status = status;
+  const [rows, total] = await Promise.all([
+    bookingRepository.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit)
+      .populate('eventId', 'title startsAt endsAt city playProductId').lean(),
+    bookingRepository.countDocuments(filter),
+  ]);
+  const items = rows.map((b: any) => ({ id: String(b._id), status: b.status, gender: b.gender, amountInPaise: b.amountInPaise, datesCompleted: b.datesCompleted ?? 0,
+    attendedAt: b.attendedAt ?? null, confirmedAt: b.confirmedAt ?? null, createdAt: b.createdAt, refund: b.refund?.status ? b.refund : undefined,
+    event: b.eventId?._id ? { id: String(b.eventId._id), title: b.eventId.title, startsAt: b.eventId.startsAt, endsAt: b.eventId.endsAt ?? null, city: b.eventId.city ?? null, playProductId: b.eventId.playProductId ?? null }
+      : { id: String(b.eventId), title: null, startsAt: null, endsAt: null, city: null, playProductId: null } }));
+  return { items, total, page, limit };
+}
+
 // ---------- live session (Sprint 3) ----------
 /** The caller's confirmed booking for an event, or null. */
 export async function findConfirmedBooking(eventId: string, userId: string) {

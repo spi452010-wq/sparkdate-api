@@ -62,6 +62,7 @@ It handles subscription, one-time product, and voided purchase notifications. A 
 | GET | /api/v1/admin/refunds?status=&q=&page=&limit= |
 | POST | /api/v1/admin/refunds/:bookingId/approve (calls orders.refund) |
 | POST | /api/v1/admin/refunds/:bookingId/reject `{reason}` (final) |
+| GET | /api/v1/admin/users/:id/bookings?status=&page=&limit= (admin only; `status` one of the booking statuses; `limit` ≤ 100, default 20; newest first) → `{items:[{id, status, gender, amountInPaise, datesCompleted, attendedAt, confirmedAt, createdAt, refund?, event:{id, title, startsAt, endsAt, city, playProductId}}], total, page, limit}`; `400` invalid id/query, `401`/`403` |
 | GET | /api/v1/admin/payments?status=&userId=&eventId=&q=&page=&limit= (`purchaseToken` is never returned; `status=unlinked` is the alert list) |
 | POST | /api/v1/admin/payments/:id/link `{bookingId}` → `{status, booking}`; only for `unlinked` payments (`409 PAYMENT_NOT_UNLINKED`); the booking must belong to the payer, be `pending` or `expired`, and be for an event with the payment's product, otherwise `404 BOOKING_NOT_FOUND`. An expired booking re-takes a seat; if none is left → `409 EVENT_FULL` and the payment stays `unlinked` (no auto-refund). On success the booking is confirmed, then the purchase is acknowledged (a failed acknowledge is retried by the `payment.ack` job) |
 | POST | /api/v1/admin/events/:id/cancel → `{summary:{cancelledPending,cancelledFree,refunded,refundFailed}}`. Safe to re-run; failed refunds are retried by `refund.retry`. |
