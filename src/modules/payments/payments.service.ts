@@ -55,7 +55,7 @@ export async function retryRefund(paymentId: string) {
 }
 
 /** Applies a Play product purchase to a booking (used by /payments/play/verify and RTDN). Implements section 4 ordering. */
-export async function finalizeTicket(userId: string, bookingId: string, productId: string, token: string, p: ProductPurchase): Promise<TicketResult> {
+export async function finalizeTicket(userId: string, bookingId: string, productId: string, token: string, p: ProductPurchase, opts: { adminLink?: boolean } = {}): Promise<TicketResult> {
   const b = await bookingRepository.findOne({ _id: bookingId, userId });
   if (!b) throw new AppError(404, 'BOOKING_NOT_FOUND');
   const ev = await eventRepository.findById(b.eventId);
@@ -98,6 +98,10 @@ export async function finalizeTicket(userId: string, bookingId: string, productI
     if (cur && ['expired', 'cancelled'].includes(cur.status) && (await reserveSeat(cur.eventId, cur.gender as any))) {
       conf = await bookingRepository.findOneAndUpdate({ _id: bookingId, status: { $in: ['expired', 'cancelled'] } }, { $set: set, $unset: { cancelledAt: 1 } }, { new: true });
       if (!conf) await releaseSeat(cur.eventId, cur.gender as any);
+    }
+    if (!conf && opts.adminLink) { // admin link never auto-refunds: put the purchase back to unlinked (still unacknowledged) and tell the admin
+      await paymentRepository.updateOne({ _id: pay._id, status: 'verified', bookingId }, { $set: { status: 'unlinked' }, $unset: { bookingId: 1, amountInPaise: 1 } });
+      throw new AppError(409, 'EVENT_FULL', 'No seat left for this booking; payment stays unlinked');
     }
     if (!conf) {
       const refunded = await refundPayment(pay);
@@ -200,18 +204,27 @@ async function saveUnlinked(userId: string, productId: string, token: string, p:
   await getQueue().add('payment.reconcile', { paymentId: String(pay._id) }, { jobId: jobId('reconcile', String(pay._id)), delayMs: RECONCILE_MIN * MIN });
   return 'processed';
 }
+/** Google auto-refunds a purchase not acknowledged within 3 days of purchase. */
+export const ackDeadline = (pay: { purchaseTime?: Date | null; createdAt?: Date | null }) => {
+  const t = pay.purchaseTime ?? pay.createdAt; return t ? new Date(+t + ACK_LIMIT_MS) : null;
+};
 /** payment.reconcile: still unlinked after 15 min -> flag for admins (GET /admin/payments?status=unlinked). No auto-refund. */
 export async function reconcileUnlinked(paymentId: string) {
   const pay = await paymentRepository.findOneAndUpdate({ _id: paymentId, status: 'unlinked', flaggedAt: { $exists: false } }, { $set: { flaggedAt: new Date() } }, { new: true });
-  if (pay) logger.error({ alert: 'payment_unlinked', paymentId, userId: String(pay.userId), orderId: pay.orderId }, 'ADMIN ALERT: Play purchase not linked to a booking');
+  if (pay) logger.error({ alert: 'payment_unlinked', paymentId, userId: String(pay.userId), orderId: pay.orderId, ackDeadline: ackDeadline(pay)?.toISOString() }, 'ADMIN ALERT: Play purchase not linked to a booking');
   return pay ? 'flagged' : 'ok';
 }
 /** Admin: link an unlinked purchase to one of the same user's bookings (re-reads the purchase from Play). */
 export async function linkPayment(paymentId: string, bookingId: string) {
   const pay = await paymentRepository.findOne({ _id: paymentId, status: 'unlinked' });
   if (!pay) throw new AppError(409, 'PAYMENT_NOT_UNLINKED');
+  // Booking must be the payer's, pending or expired, and for an event sold with this product; anything else is 404 (no existence leak).
+  const b = await bookingRepository.findOne({ _id: bookingId, userId: pay.userId, status: { $in: ['pending', 'expired'] } });
+  const ev = b && (await eventRepository.findById(b.eventId));
+  if (!b || ev?.playProductId !== pay.productId) throw new AppError(404, 'BOOKING_NOT_FOUND');
   const p = await getPlayClient().getProduct(pay.productId, pay.purchaseToken).catch((e) => { throw mapPlayError(e); });
-  const r = await finalizeTicket(String(pay.userId), bookingId, pay.productId, pay.purchaseToken, p); // 404 if the booking is not this user's
+  // finalizeTicket confirms first, then acknowledges (payment.ack job retries on failure). Unlinked payments are never acknowledged.
+  const r = await finalizeTicket(String(pay.userId), bookingId, pay.productId, pay.purchaseToken, p, { adminLink: true });
   return { status: r.status, booking: bookingOut(r.booking) };
 }
 export async function onVoided(token: string) {

@@ -26,7 +26,8 @@ class FakePlay implements PlayClient {
   acks: string[] = []; refunds: string[] = []; down = false;
   private chk() { if (this.down) throw new AppError(503, 'PLAY_UNAVAILABLE'); }
   async getProduct(_p: string, t: string) { this.chk(); const p = this.products.get(t); if (!p) throw new AppError(400, 'PURCHASE_INVALID'); return p; }
-  async acknowledgeProduct(_p: string, t: string) { this.chk(); this.acks.push(t); }
+  ackDown = false;
+  async acknowledgeProduct(_p: string, t: string) { this.chk(); if (this.ackDown) throw new AppError(503, 'PLAY_UNAVAILABLE'); this.acks.push(t); }
   async getSubscription(t: string) { this.chk(); const s = this.subs.get(t); if (!s) throw new AppError(400, 'PURCHASE_INVALID'); return s; }
   async acknowledgeSubscription(_p: string, t: string) { this.chk(); this.acks.push(t); }
   async refundOrder(o: string) { this.chk(); this.refunds.push(o); }
@@ -268,9 +269,81 @@ describe('play verification', () => {
     const list = (await a.agent.get('/api/v1/admin/payments?status=unlinked').expect(200)).body;
     expect(list.items.map((i: any) => i.id)).toContain(String(pay!._id));
     expect(list.items.find((i: any) => i.id === String(pay!._id)).flaggedAt).toBeTruthy();
+    expect(list.items.find((i: any) => i.id === String(pay!._id)).ackDeadline).toBe(new Date(+pay!.purchaseTime! + 3 * 86400_000).toISOString());
+    expect(play.acks).not.toContain('tok-unlinked-2'); // unlinked purchases are never acknowledged
+    await q().runDue(Date.now() + 60 * 60_000, 'payment.ack');
+    expect(play.acks).not.toContain('tok-unlinked-2');
     expect((await a.agent.post(`/api/v1/admin/payments/${pay!._id}/link`).set('X-CSRF-Token', a.csrf).send({ bookingId: b1.id }).expect(200)).body.status).toBe('confirmed');
     expect((await Booking.findById(b1.id))!.status).toBe('confirmed');
     expect((await Payment.findById(pay!._id))!.status).toBe('verified');
+    expect(play.acks).toContain('tok-unlinked-2'); // acknowledged only after the admin linked it
+    expect((await Payment.findById(pay!._id))!.acknowledged).toBe(true);
+  });
+  async function unlinkedPayment(tok: string) {
+    const u = await appUser();
+    const b1 = (await book(u, await paidEvent()).expect(201)).body.booking;
+    const b2 = (await book(u, await paidEvent()).expect(201)).body.booking;
+    purchase(tok, u.id, b1.id, { obfuscatedExternalProfileId: undefined, purchaseTimeMillis: String(Date.now() - 3600_000) });
+    await push({ oneTimeProductNotification: { notificationType: 1, purchaseToken: tok, sku: 'event_ticket_199' } }).expect(204);
+    await q().runDue(Date.now(), 'webhook.process');
+    return { u, b1, b2, pay: (await Payment.findOne({ purchaseToken: tok }))! };
+  }
+  const link = (a: any, payId: any, bookingId: string) => a.agent.post(`/api/v1/admin/payments/${payId}/link`).set('X-CSRF-Token', a.csrf).send({ bookingId });
+  it('ADMIN ALERT log carries ackDeadline (purchase time + 3 days)', async () => {
+    const { pay } = await unlinkedPayment('tok-alert-1');
+    const { logger } = require('../src/utils/logger');
+    const spy = jest.spyOn(logger, 'error');
+    try {
+      await q().runDue(Date.now() + 16 * 60_000, 'payment.reconcile');
+      const call = spy.mock.calls.find((c: any[]) => String(c[1]).startsWith('ADMIN ALERT'))!;
+      expect(call[0]).toMatchObject({ alert: 'payment_unlinked', paymentId: String(pay._id), ackDeadline: new Date(+pay.purchaseTime! + 3 * 86400_000).toISOString() });
+    } finally { spy.mockRestore(); }
+  });
+  it('admin link: 404 for foreign / not pending-or-expired / other-product booking; 409 PAYMENT_NOT_UNLINKED for a linked payment', async () => {
+    const { u, b2, pay } = await unlinkedPayment('tok-link-rules');
+    const a = await admin();
+    const other = await appUser(); const ob = (await book(other, await paidEvent()).expect(201)).body.booking;
+    expect((await link(a, pay._id, ob.id).expect(404)).body.error.code).toBe('BOOKING_NOT_FOUND');
+    const wrong = (await book(u, await paidEvent({ playProductId: 'event_ticket_499', priceInPaise: 49900 })).expect(201)).body.booking;
+    expect((await link(a, pay._id, wrong.id).expect(404)).body.error.code).toBe('BOOKING_NOT_FOUND');
+    await Booking.updateOne({ _id: b2.id }, { status: 'confirmed' });
+    expect((await link(a, pay._id, b2.id).expect(404)).body.error.code).toBe('BOOKING_NOT_FOUND');
+    expect((await Payment.findById(pay._id))!.status).toBe('unlinked');
+    expect(play.acks).not.toContain('tok-link-rules');
+    const ok = await paidConfirmed(u, await paidEvent());
+    const linked = await Payment.findOne({ purchaseToken: ok.token });
+    expect((await link(a, linked!._id, ok.bookingId).expect(409)).body.error.code).toBe('PAYMENT_NOT_UNLINKED');
+  });
+  it('admin link of an expired booking: confirms if a seat is free; 409 EVENT_FULL (stays unlinked, no refund, no ack) if not', async () => {
+    const a = await admin();
+    const { b1, pay } = await unlinkedPayment('tok-link-expired');
+    await Booking.updateOne({ _id: b1.id }, { holdExpiresAt: new Date(Date.now() - 1000) });
+    await q().runDue(Date.now() + 11 * 60_000, 'booking.expire');
+    expect((await Booking.findById(b1.id))!.status).toBe('expired');
+    expect((await link(a, pay._id, b1.id).expect(200)).body.status).toBe('confirmed');
+    expect(play.acks).toContain('tok-link-expired');
+
+    const full = await unlinkedPayment('tok-link-full');
+    const b = await Booking.findById(full.b1.id);
+    await Booking.updateOne({ _id: b!._id }, { holdExpiresAt: new Date(Date.now() - 1000) });
+    await q().runDue(Date.now() + 11 * 60_000, 'booking.expire');
+    await Event.updateOne({ _id: b!.eventId }, { $set: { 'capacity.male': 0, 'capacity.female': 0 } });
+    expect((await link(a, full.pay._id, full.b1.id).expect(409)).body.error.code).toBe('EVENT_FULL');
+    const after = (await Payment.findById(full.pay._id))!;
+    expect(after.status).toBe('unlinked'); expect(after.bookingId).toBeUndefined();
+    expect(play.refunds).toHaveLength(0); expect(play.acks).not.toContain('tok-link-full');
+    expect((await Booking.findById(full.b1.id))!.status).toBe('expired');
+  });
+  it('admin link: acknowledge failure is retried by the payment.ack job', async () => {
+    const a = await admin();
+    const { b1, pay } = await unlinkedPayment('tok-link-ackfail');
+    play.ackDown = true;
+    expect((await link(a, pay._id, b1.id).expect(200)).body.status).toBe('confirmed');
+    expect((await Payment.findById(pay._id))!.acknowledged).toBe(false);
+    play.ackDown = false;
+    await q().runDue(Date.now() + 11 * 60_000, 'payment.ack');
+    expect((await Payment.findById(pay._id))!.acknowledged).toBe(true);
+    expect(play.acks).toContain('tok-link-ackfail');
   });
   it('hold expiry vs late purchase: re-holds if seat free, refunds if full', async () => {
     const eid = await paidEvent({ capacity: { male: 1, female: 1 } }); const u = await appUser(); const u2 = await appUser();

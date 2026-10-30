@@ -54,7 +54,7 @@ Types: booking_confirmed, event_reminder, event_cancelled, refund_processed, ref
 ## Webhook
 `POST /api/v1/webhooks/play` receives Pub/Sub push. It requires an OIDC bearer token whose audience is `PUBSUB_PUSH_AUDIENCE` and whose email is `PUBSUB_SA_EMAIL`, otherwise it returns 401.
 Messages are deduplicated by `messageId`. Messages from other packages are ignored. The handler returns 204 and processes the message in the `webhook.process` job.
-It handles subscription, one-time product, and voided purchase notifications. A one-time purchase without `obfuscatedExternalProfileId` (Flutter) is applied only when the user has exactly one `pending` booking for an event with that `playProductId`; with zero or several the server never guesses: it saves the payment with status `unlinked` (no booking, no refund) and schedules `payment.reconcile` in 15 min. A later app verify with `bookingId` links that payment to the booking (once, atomically). If it is still unlinked at reconcile, it gets `flaggedAt` and an `ADMIN ALERT` log line; admins see it at `GET /admin/payments?status=unlinked` and resolve it with `POST /admin/payments/:id/link {bookingId}`. It is never auto-refunded. Voided purchases are also reconciled daily by the `voided.sync` job.
+It handles subscription, one-time product, and voided purchase notifications. A one-time purchase without `obfuscatedExternalProfileId` (Flutter) is applied only when the user has exactly one `pending` booking for an event with that `playProductId`; with zero or several the server never guesses: it saves the payment with status `unlinked` (no booking, no refund) and schedules `payment.reconcile` in 15 min. A later app verify with `bookingId` links that payment to the booking (once, atomically). If it is still unlinked at reconcile, it gets `flaggedAt` and an `ADMIN ALERT` log line (includes `ackDeadline` = purchase time + 3 days); admins see it at `GET /admin/payments?status=unlinked` and resolve it with `POST /admin/payments/:id/link {bookingId}`. It is never auto-refunded by us and never acknowledged while unlinked, so if nobody links it Google refunds it automatically at `ackDeadline`. Voided purchases are also reconciled daily by the `voided.sync` job.
 
 ## Admin (role admin only; hosts get 403)
 | Method | Path |
@@ -63,7 +63,7 @@ It handles subscription, one-time product, and voided purchase notifications. A 
 | POST | /api/v1/admin/refunds/:bookingId/approve (calls orders.refund) |
 | POST | /api/v1/admin/refunds/:bookingId/reject `{reason}` (final) |
 | GET | /api/v1/admin/payments?status=&userId=&eventId=&q=&page=&limit= (`purchaseToken` is never returned; `status=unlinked` is the alert list) |
-| POST | /api/v1/admin/payments/:id/link `{bookingId}` → `{status, booking}`; only for `unlinked` payments (`409 PAYMENT_NOT_UNLINKED`), booking must belong to the payer (`404`) |
+| POST | /api/v1/admin/payments/:id/link `{bookingId}` → `{status, booking}`; only for `unlinked` payments (`409 PAYMENT_NOT_UNLINKED`); the booking must belong to the payer, be `pending` or `expired`, and be for an event with the payment's product, otherwise `404 BOOKING_NOT_FOUND`. An expired booking re-takes a seat; if none is left → `409 EVENT_FULL` and the payment stays `unlinked` (no auto-refund). On success the booking is confirmed, then the purchase is acknowledged (a failed acknowledge is retried by the `payment.ack` job) |
 | POST | /api/v1/admin/events/:id/cancel → `{summary:{cancelledPending,cancelledFree,refunded,refundFailed}}`. Safe to re-run; failed refunds are retried by `refund.retry`. |
 
 `PATCH /admin/events/:id {status:"cancelled"}` returns `409 USE_CANCEL_ENDPOINT` when the event has bookings.
@@ -77,7 +77,7 @@ Payments response:
 ```json
 { "items": [{ "id": "…", "userId": "…", "user": { "id": "…", "fullName": "Asha Verma", "phone": "+9190…" },
   "bookingId": "…|null", "kind": "ticket|chat_pass", "productId": "event_ticket_199", "orderId": "GPA.…",
-  "amountInPaise": 19900, "status": "verified|unlinked|refunded|refund_failed|voided", "acknowledged": true, "flaggedAt": "…|undefined",
+  "amountInPaise": 19900, "status": "verified|unlinked|refunded|refund_failed|voided", "acknowledged": true, "flaggedAt": "…|undefined", "ackDeadline": "ISO, only for status=unlinked: purchaseTime + 3 days; after it Google auto-refunds",
   "createdAt": "…", "refundedAt": "…|undefined" }], "page": 1, "limit": 20, "total": 1 }
 ```
 Refunds response:
