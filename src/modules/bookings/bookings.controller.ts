@@ -5,7 +5,7 @@ import { bookingOut } from './booking.mapper';
 export const create = asyncHandler(async (req, res) => {
   const { booking: b, event: ev, created } = await svc.createBooking(req.user.id, req.body.eventId);
   const play = b.status === 'pending' && ev.priceInPaise > 0
-    ? { productId: ev.playProductId, obfuscatedAccountId: req.user.id, obfuscatedProfileId: String(b._id) } : undefined;
+    ? { productId: ev.playProductId, obfuscatedAccountId: req.user.id } : undefined;
   res.status(created ? 201 : 200).json({ booking: bookingOut(b, ev, b.gender), ...(play ? { play } : {}) });
 });
 export const cancel = asyncHandler(async (req, res) => {

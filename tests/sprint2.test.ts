@@ -145,7 +145,8 @@ describe('bookings', () => {
     expect((await Event.findById(eid))!.booked!.male).toBe(3);
     const ok = rs.find((r) => r.status === 201)!.body;
     expect(ok.booking.status).toBe('pending');
-    expect(ok.play).toMatchObject({ productId: 'event_ticket_199', obfuscatedProfileId: ok.booking.id });
+    expect(ok.play).toMatchObject({ productId: 'event_ticket_199' });
+    expect(ok.play).not.toHaveProperty('obfuscatedProfileId');
   });
   it('same user parallel double-tap creates one booking and one seat', async () => {
     const eid = await paidEvent(); const u = await appUser();
@@ -192,6 +193,36 @@ describe('play verification', () => {
     expect((await verify(u, ticket(b.id, 'tok-eeeeeeeeee')).expect(503)).body.error.code).toBe('PLAY_UNAVAILABLE');
     play.down = false;
     await verify(u, ticket(b.id, 'tok-eeeeeeeeee')).expect(200); // retryable with a new key
+  });
+  describe('Flutter purchases (only obfuscatedExternalAccountId set)', () => {
+    const flutter = { obfuscatedExternalProfileId: undefined };
+    it('confirms with accountId only, and rejects another user\'s accountId with PURCHASE_INVALID', async () => {
+      const eid = await paidEvent(); const u = await appUser(); const other = await appUser();
+      const b = (await book(u, eid).expect(201)).body.booking;
+      purchase('tok-flutter-other', other.id, b.id, flutter);
+      expect((await verify(u, ticket(b.id, 'tok-flutter-other')).expect(400)).body.error.code).toBe('PURCHASE_INVALID');
+      purchase('tok-flutter-noacct', u.id, b.id, { ...flutter, obfuscatedExternalAccountId: undefined });
+      expect((await verify(u, ticket(b.id, 'tok-flutter-noacct')).expect(400)).body.error.code).toBe('PURCHASE_INVALID');
+      purchase('tok-flutter-own', u.id, b.id, flutter);
+      expect((await verify(u, ticket(b.id, 'tok-flutter-own')).expect(200)).body.status).toBe('confirmed');
+    });
+    it('rejects paying for another user\'s booking', async () => {
+      const eid = await paidEvent(); const u = await appUser(); const other = await appUser();
+      const ob = (await book(other, eid).expect(201)).body.booking;
+      purchase('tok-flutter-foreign', u.id, ob.id, flutter);
+      expect((await verify(u, ticket(ob.id, 'tok-flutter-foreign')).expect(404)).body.error.code).toBe('BOOKING_NOT_FOUND');
+      expect((await Booking.findById(ob.id))!.status).toBe('pending');
+    });
+    it('one purchase token cannot confirm two bookings', async () => {
+      const u = await appUser();
+      const b1 = (await book(u, await paidEvent()).expect(201)).body.booking;
+      const b2 = (await book(u, await paidEvent()).expect(201)).body.booking;
+      purchase('tok-flutter-twice', u.id, b1.id, flutter);
+      await verify(u, ticket(b1.id, 'tok-flutter-twice')).expect(200);
+      expect((await verify(u, ticket(b2.id, 'tok-flutter-twice')).expect(409)).body.error.code).toBe('PURCHASE_ALREADY_USED');
+      expect((await Booking.findById(b2.id))!.status).toBe('pending');
+      expect(await Payment.countDocuments({ purchaseToken: 'tok-flutter-twice' })).toBe(1);
+    });
   });
   it('hold expiry vs late purchase: re-holds if seat free, refunds if full', async () => {
     const eid = await paidEvent({ capacity: { male: 1, female: 1 } }); const u = await appUser(); const u2 = await appUser();

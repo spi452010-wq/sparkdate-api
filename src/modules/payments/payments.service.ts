@@ -60,7 +60,13 @@ export async function finalizeTicket(userId: string, bookingId: string, productI
   if (!b) throw new AppError(404, 'BOOKING_NOT_FOUND');
   const ev = await eventRepository.findById(b.eventId);
   if (!ev?.playProductId || ev.playProductId !== productId || (p.productId && p.productId !== productId)) throw new AppError(400, 'PRODUCT_MISMATCH');
-  if (p.obfuscatedExternalAccountId !== userId || p.obfuscatedExternalProfileId !== bookingId) throw new AppError(400, 'PURCHASE_INVALID', 'Purchase does not belong to this booking');
+  // Flutter in_app_purchase can only set obfuscatedExternalAccountId (= userId); it is mandatory. The profile id is optional but, if present, must be this booking.
+  if (!p.obfuscatedExternalAccountId || p.obfuscatedExternalAccountId !== userId) throw new AppError(400, 'PURCHASE_INVALID', 'Purchase does not belong to this user');
+  if (p.obfuscatedExternalProfileId && p.obfuscatedExternalProfileId !== bookingId) throw new AppError(400, 'PURCHASE_INVALID', 'Purchase does not belong to this booking');
+  if (!['pending', 'expired', 'cancelled'].includes(b.status)) { // only a pending booking (or the expired-retry path) can be paid; same-token retries stay idempotent
+    const prev = await paymentRepository.findOne({ purchaseToken: token }).select('userId bookingId');
+    if (!prev || String(prev.userId) !== userId || String(prev.bookingId) !== bookingId) throw new AppError(409, 'BOOKING_NOT_PENDING');
+  }
   if (p.purchaseState === 2) { // pending (e.g. UPI): keep the seat a bit longer and wait for RTDN
     const until = new Date(Date.now() + env.PENDING_PURCHASE_HOLD_MIN * MIN);
     const ext = await bookingRepository.findOneAndUpdate({ _id: bookingId, status: 'pending', holdExpiresAt: { $lt: until } }, { $set: { holdExpiresAt: until } }, { new: true });
@@ -160,8 +166,16 @@ export async function onOneTimeRtdn(n: { notificationType: number; purchaseToken
   if (n.notificationType !== 1) return 'ignored'; // 2 = pending purchase cancelled: the hold just expires
   const p = await getPlayClient().getProduct(n.sku, n.purchaseToken);
   if (p.purchaseState !== 0) return 'ignored';
-  const userId = p.obfuscatedExternalAccountId; const bookingId = p.obfuscatedExternalProfileId;
-  if (!isId(userId) || !isId(bookingId)) return 'ignored';
+  const userId = p.obfuscatedExternalAccountId;
+  if (!isId(userId)) return 'ignored';
+  // Flutter clients cannot set the profile id, so fall back to the user's latest pending booking for an event sold under this SKU.
+  let bookingId = p.obfuscatedExternalProfileId;
+  if (!bookingId) {
+    const eventIds = await eventRepository.distinct('_id', { playProductId: n.sku });
+    const b = await bookingRepository.findOne({ userId, eventId: { $in: eventIds }, status: 'pending' }).sort({ createdAt: -1 }).select('_id');
+    bookingId = b ? String(b._id) : undefined;
+  }
+  if (!isId(bookingId)) return 'ignored';
   if (await paymentRepository.exists({ purchaseToken: n.purchaseToken })) return 'ignored';
   try { await finalizeTicket(userId, bookingId, n.sku, n.purchaseToken, p); }
   catch (e) { if (e instanceof AppError && e.status < 500) { logger.warn({ code: e.code }, 'RTDN purchase not applied'); return 'ignored'; } throw e; }
