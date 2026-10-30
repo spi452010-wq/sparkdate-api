@@ -22,7 +22,7 @@ Payloads are strict (unknown keys -> `VALIDATION_ERROR`). Per-socket limit: 30 m
 ### Server -> client
 | event | payload |
 |---|---|
-| `lobby:state` | `{eventId, round, status, waiting, nextRoundAt}` |
+| `lobby:state` | `{eventId, round, status, waiting, nextRoundAt}`. Coalesced per event: at most one emit per `LIVE_LOBBY_THROTTLE_MS` (default 1000). The first change emits at once; changes inside the window collapse into one trailing emit built from the latest state when it fires, so the final state is never lost. The `event:join` ack always carries the current state immediately. Throttling is per API instance. |
 | `match:found` | `{dateId, round, partner:{id, fullName, age, city, photoUrl, interests, bio}, livekit:{url, room, token}, startsAt, endsAt}` |
 | `round:started` | `{dateId, endsAt}` |
 | `round:ended` | `{dateId, decisionDeadline}` |
@@ -58,7 +58,7 @@ One room per date: `evt_{eventId}_r{round}_{dateId}`. Identity = userId. Grant: 
 - Reconnect grace `RECONNECT_GRACE_SEC` (20 s).
 
 ## Env
-`LIVEKIT_URL` (wss://), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (>= 32 chars): optional in dev (placeholder token), required and non-placeholder in production. `ROUND_BREAK_SEC=30`, `DECISION_WINDOW_SEC=60`, `RECONNECT_GRACE_SEC=20`, `LIVE_PRESENCE_TTL_SEC=30`, `REDIS_URL` (optional).
+`LIVEKIT_URL` (wss://), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (>= 32 chars): optional in dev (placeholder token), required and non-placeholder in production. `ROUND_BREAK_SEC=30`, `DECISION_WINDOW_SEC=60`, `RECONNECT_GRACE_SEC=20`, `LIVE_PRESENCE_TTL_SEC=30`, `LIVE_LOBBY_THROTTLE_MS=1000` (0 disables coalescing, max 10000), `REDIS_URL` (optional).
 
 ## Deviations from the design
 - `profession` / `interestedCity` are not in the profile schema yet; they score 0 (city is used for display).
@@ -83,4 +83,5 @@ Creates one published event (starts in `SEED_START_IN_MIN`=5 min, runs `SEED_DUR
 ## Owner setup
 - LiveKit Cloud or self-hosted: key/secret + `wss://` URL; set room `emptyTimeout` ~30 s.
 - Redis for multi-node (adapter, presence, jobs).
+- `MONGO_URI`: use `mongodb://127.0.0.1:27017/...` rather than `localhost` for a local mongod. Node 17+ (incl. Node 24) resolves `localhost` to IPv6 `::1` first, and a mongod bound only to 127.0.0.1 then fails with `ECONNREFUSED ::1:27017`. (`seed:load` accepts both.)
 - Nginx: sticky sessions (`ip_hash` or cookie) and websocket upgrade headers (`proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`), read timeout > 60 s.

@@ -46,7 +46,28 @@ async function lobbyState(eventId: string, ev?: LiveEvent | null) {
   const status = st?.status ?? (e?.status === 'live' ? 'live' : e?.status === 'ended' ? 'ended' : 'lobby');
   return { eventId, round: st?.round ?? 0, status, waiting, nextRoundAt: iso(st ? st.nextRoundAt : e ? +e.startsAt : null) };
 }
-async function broadcastLobby(eventId: string, ev?: LiveEvent | null) { emitter.toEvent(eventId, 'lobby:state', await lobbyState(eventId, ev)); }
+/** lobby:state is coalesced per event: at most one emit per LIVE_LOBBY_THROTTLE_MS (leading edge), and any calls
+ *  inside the window collapse into one trailing emit whose state is computed when it fires, so the final state is never lost. */
+const lobbyThrottle = new Map<string, { lastAt: number; timer: NodeJS.Timeout | null }>();
+async function emitLobbyNow(eventId: string, ev?: LiveEvent | null) {
+  const t = lobbyThrottle.get(eventId) ?? { lastAt: 0, timer: null }; t.lastAt = Date.now(); lobbyThrottle.set(eventId, t);
+  emitter.toEvent(eventId, 'lobby:state', await lobbyState(eventId, ev));
+}
+async function broadcastLobby(eventId: string, ev?: LiveEvent | null) {
+  const win = env.LIVE_LOBBY_THROTTLE_MS;
+  if (win <= 0) return emitLobbyNow(eventId, ev);
+  const t = lobbyThrottle.get(eventId);
+  if (t?.timer) return; // trailing emit already pending; it will read the latest state
+  const wait = t ? t.lastAt + win - Date.now() : 0;
+  if (wait <= 0) return emitLobbyNow(eventId, ev);
+  t!.timer = setTimeout(() => {
+    t!.timer = null;
+    emitLobbyNow(eventId).catch((err) => logger.error({ err, eventId }, 'lobby:state emit failed'));
+  }, wait);
+  t!.timer.unref?.();
+}
+/** Test/shutdown helper: drop pending trailing emits. */
+export function resetLobbyThrottle() { for (const t of lobbyThrottle.values()) if (t.timer) clearTimeout(t.timer); lobbyThrottle.clear(); }
 
 // ---------- LiveKit ----------
 async function mint(room: string, identity: string, name: string | null, endsAt: Date) {
@@ -84,8 +105,8 @@ export async function join(userId: string, eventId: string) {
     try { await matchFound(d, userId, p, await mint(d.room, userId, null, d.endsAt)); }
     catch (err) { logger.error({ err, eventId, dateId: String(d._id) }, 'livekit token mint failed on rejoin'); }
   }
-  const lobby = await lobbyState(eventId, ev);
-  emitter.toEvent(eventId, 'lobby:state', lobby);
+  const lobby = await lobbyState(eventId, ev); // the joiner gets it in the ack; the room gets a coalesced broadcast
+  await broadcastLobby(eventId, ev);
   return { lobby, serverTime: now };
 }
 

@@ -41,6 +41,7 @@ const schema = z.object({
   DECISION_WINDOW_SEC: z.coerce.number().int().min(10).max(600).default(60),
   RECONNECT_GRACE_SEC: z.coerce.number().int().min(5).max(120).default(20),
   LIVE_PRESENCE_TTL_SEC: z.coerce.number().int().min(15).max(300).default(30),
+  LIVE_LOBBY_THROTTLE_MS: z.coerce.number().int().min(0).max(10_000).default(1000),
 });
 
 const parsed = schema.safeParse(process.env);
