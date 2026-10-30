@@ -9,7 +9,7 @@ rounds -> after each round like/save -> mutual = connection -> chat (needs Month
 Refund flow when user gets no match. Admin creates events with separate boys/girls capacity.
 
 ## 2. System boundaries
-- apps/mobile   : Flutter (Riverpod, go_router, livekit_client)
+- apps/mobile   : Flutter (GetX for state, DI and routing [APPROVED 30 Oct], dio, livekit_client)
 - apps/admin    : React + TS + Vite (TanStack Query), httpOnly cookie session
 - services/api  : Node.js + TS + Express, ONE modular monolith [APPROVED: Node]
   modules: auth, users/profile, verification, events, bookings, payments, live (sessions/matching),
