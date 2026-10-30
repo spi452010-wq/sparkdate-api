@@ -22,7 +22,7 @@ Payloads are strict (unknown keys -> `VALIDATION_ERROR`). Per-socket limit: 30 m
 | event | payload |
 |---|---|
 | `lobby:state` | `{eventId, round, status, waiting, nextRoundAt}` |
-| `match:found` | `{dateId, round, partner:{id, fullName, age, city, photoUrl, interests}, livekit:{url, room, token}, startsAt, endsAt}` |
+| `match:found` | `{dateId, round, partner:{id, fullName, age, city, photoUrl, interests, bio}, livekit:{url, room, token}, startsAt, endsAt}` |
 | `round:started` | `{dateId, endsAt}` |
 | `round:ended` | `{dateId, decisionDeadline}` |
 | `partner:left` | `{dateId, reason: "disconnect"\|"left"}` (`disconnect` only after the reconnect grace) |

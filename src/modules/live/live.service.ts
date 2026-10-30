@@ -30,8 +30,8 @@ const roundMs = (ev: LiveEvent) => ev.roundMinutes * 60 * SEC;
 export const roomName = (e: string, n: number, dateId: string) => `evt_${e}_r${n}_${dateId}`;
 const positive = (d?: Decision | null) => d === 'like' || d === 'save';
 const card = (p?: LiveProfile, id?: string) => p
-  ? { id: p.id, fullName: p.fullName, age: p.age, city: p.city, photoUrl: p.photoUrl, interests: p.interests }
-  : { id: id!, fullName: null, age: null, city: null, photoUrl: null, interests: [] as string[] };
+  ? { id: p.id, fullName: p.fullName, age: p.age, city: p.city, photoUrl: p.photoUrl, interests: p.interests, bio: p.bio }
+  : { id: id!, fullName: null, age: null, city: null, photoUrl: null, interests: [] as string[], bio: null };
 const other = (d: any, u: string) => (String(d.userA) === u ? String(d.userB) : String(d.userA));
 const inDate = (d: any, u: string) => String(d.userA) === u || String(d.userB) === u;
 const iso = (t: number | Date | null | undefined) => (t == null ? null : new Date(t).toISOString());

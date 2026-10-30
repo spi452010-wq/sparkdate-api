@@ -168,12 +168,12 @@ describe('socket auth and authz', () => {
 describe('rounds', () => {
   it('match:found carries partner card, LiveKit room/token and server times; no re-pairing across rounds', async () => {
     const e = await mkEvent();
-    const [m1, m2, f1, f2] = [await mkUser('male', { interests: ['music'] }), await mkUser('male'), await mkUser('female', { interests: ['music'] }), await mkUser('female')];
+    const [m1, m2, f1, f2] = [await mkUser('male', { interests: ['music'] }), await mkUser('male'), await mkUser('female', { interests: ['music'], bio: 'Hi there' }), await mkUser('female')];
     const [sm1, sm2, sf1, sf2] = await joined(e, m1, m2, f1, f2);
     await tick(e, 1);
     await until(() => [sm1, sm2, sf1, sf2].every((s) => got(s, 'match:found').length === 1));
     const mf = got(sm1, 'match:found')[0];
-    expect(mf.partner).toEqual({ id: f1.id, fullName: expect.any(String), age: expect.any(Number), city: 'Pune', photoUrl: null, interests: ['music'] });
+    expect(mf.partner).toEqual({ id: f1.id, fullName: expect.any(String), age: expect.any(Number), city: 'Pune', photoUrl: null, interests: ['music'], bio: 'Hi there' });
     expect(mf.partner.phone).toBeUndefined();
     expect(mf.livekit.room).toBe(`evt_${e}_r1_${mf.dateId}`); expect(mf.livekit.url).toBe('wss://livekit.test');
     expect(mf.livekit.token).toBe(`fake.${mf.livekit.room}.${m1.id}.${lk.minted.find((x) => x.identity === m1.id)!.ttlSec}`);
