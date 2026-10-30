@@ -34,6 +34,17 @@ Status values: TODO / IN PROGRESS / BLOCKED / IN REVIEW / DONE (only mark DONE w
 | S1-6 | Admin: login, event create/edit, events list, users + verification review (mock) | React.js | IN REVIEW (code ready for QA; apps/admin on real cookie auth, users, stats, events APIs; reports/refunds/payments mock-only until Sprint 2/4, see apps/admin/docs/admin-api.md) |
 | S1-7 | Test plan + automated tests for auth, OTP, profile, capacity, admin roles | QA | TODO |
 
+## Sprint 2 (API)
+| ID | Task | Owner | Status |
+|---|---|---|---|
+| S2-1 | App events list/detail, like/save | Node.js | IN REVIEW |
+| S2-2 | Bookings with atomic seat holds, expiry jobs, idempotency | Node.js | IN REVIEW |
+| S2-3 | Play verify (ticket + chat pass), acknowledge, RTDN webhook (OIDC, dedupe), voided sync | Node.js | IN REVIEW (needs owner Play/PubSub setup) |
+| S2-4 | Refund request + admin approve/reject, admin event cancel with refunds, admin payments | Node.js | IN REVIEW |
+| S2-5 | In-app notifications + reminder jobs; FCM sender | Node.js | IN REVIEW (FCM stub) |
+
+Contract: docs/api/SPRINT2_API.md
+
 ## Later sprints
 - S2 Events + booking + payments · S3 Waiting room, matching, LiveKit calls · S4 Connections, chat, subscription, refunds, notifications
 
