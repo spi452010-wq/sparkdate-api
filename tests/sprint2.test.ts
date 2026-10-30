@@ -373,3 +373,35 @@ describe('production config', () => {
     expect(findMissingProdConfig({ ...ok, PLAY_PACKAGE_NAME: 'com.example.sparkdate' }, '/srv/app')).toEqual(['PLAY_PACKAGE_NAME']);
   });
 });
+
+describe('admin payments/refunds search', () => {
+  it('filters payments by eventId and q; returns minimal user; no purchaseToken', async () => {
+    const e1 = await paidEvent(); const e2 = await paidEvent();
+    const asha = await appUser({ profile: { fullName: 'Asha Verma', gender: 'male' }, email: 'asha@x.in' });
+    const ravi = await appUser({ profile: { fullName: 'Ravi K', gender: 'male' } });
+    await paidConfirmed(asha, e1); await paidConfirmed(ravi, e2); await paidConfirmed(ravi, e1);
+    const a = await admin();
+    const byEvent = (await a.agent.get(`/api/v1/admin/payments?eventId=${e1}`).expect(200)).body;
+    expect(byEvent.total).toBe(2);
+    await a.agent.get('/api/v1/admin/payments?eventId=nope').expect(400);
+    const s = (await a.agent.get('/api/v1/admin/payments?q=asha').expect(200)).body;
+    expect(s.total).toBe(1);
+    expect(s.items[0].user).toEqual({ id: asha.id, fullName: 'Asha Verma', phone: expect.stringMatching(/^\+91/) });
+    expect(s.items[0].purchaseToken).toBeUndefined(); expect(Object.keys(s.items[0].user).sort()).toEqual(['fullName', 'id', 'phone']);
+    expect((await a.agent.get('/api/v1/admin/payments?q=ASHA@X').expect(200)).body.total).toBe(1);
+    const phone = s.items[0].user.phone;
+    expect((await a.agent.get(`/api/v1/admin/payments?q=${encodeURIComponent(phone)}&eventId=${e2}`).expect(200)).body.total).toBe(0);
+    expect((await a.agent.get('/api/v1/admin/payments?q=.*').expect(200)).body.total).toBe(0); // regex escaped
+    await a.agent.get(`/api/v1/admin/payments?q=${'a'.repeat(81)}`).expect(400);
+    expect((await a.agent.get(`/api/v1/admin/payments?q=ravi&userId=${asha.id}`).expect(200)).body.total).toBe(0);
+  });
+  it('refunds q search includes user', async () => {
+    const eid = await paidEvent(); const u = await appUser({ profile: { fullName: 'Meera S', gender: 'male' } });
+    const { bookingId } = await paidConfirmed(u, eid);
+    await Booking.updateOne({ _id: bookingId }, { refundEligible: true, status: 'refund_requested', refund: { status: 'requested', reason: 'x', requestedAt: new Date() } });
+    const a = await admin();
+    const r = (await a.agent.get('/api/v1/admin/refunds?q=meera').expect(200)).body;
+    expect(r.total).toBe(1); expect(r.items[0].user).toEqual({ id: u.id, fullName: 'Meera S', phone: expect.any(String) });
+    expect((await a.agent.get('/api/v1/admin/refunds?q=nobody').expect(200)).body.total).toBe(0);
+  });
+});

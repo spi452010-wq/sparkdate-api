@@ -17,7 +17,7 @@ const ALLOWED: Record<string, string[]> = { draft: ['published', 'cancelled'], p
 const fields = {
   title: z.string().trim().min(3).max(80),
   description: z.string().trim().max(1000).default(''),
-  city: z.string().trim().min(1).max(60).optional(),
+  city: z.string().trim().min(1).max(60),
   startsAt: z.coerce.date(),
   endsAt: z.coerce.date().optional(),
   roundMinutes: z.number().int().min(1).max(30).default(3),

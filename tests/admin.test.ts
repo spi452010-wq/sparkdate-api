@@ -25,7 +25,7 @@ async function session(email = 'admin@sd.in') {
   return { agent, csrf, cookies: r.headers['set-cookie'] as unknown as string[] };
 }
 const future = () => new Date(Date.now() + 86400_000).toISOString();
-const ev = (o: any = {}) => ({ title: 'Friday Sparks', startsAt: future(), capacity: { male: 2, female: 2 }, ...o });
+const ev = (o: any = {}) => ({ title: 'Friday Sparks', city: 'Indore', startsAt: future(), capacity: { male: 2, female: 2 }, ...o });
 
 describe('admin session', () => {
   it('sets httpOnly cookies and no token in body', async () => {
@@ -74,6 +74,14 @@ describe('admin events', () => {
     await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ capacity: { male: 200, female: 200 } })).expect(400);
     await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ startsAt: '2020-01-01T00:00:00Z' })).expect(400);
     await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ booked: { male: 9, female: 0 } })).expect(400);
+    await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ city: undefined })).expect(400);
+    await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ city: '   ' })).expect(400);
+    await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ city: 'x'.repeat(61) })).expect(400);
+    const cid = (await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ city: '  Bhopal  ' })).expect(201)).body;
+    expect(cid.city).toBe('Bhopal');
+    await agent.patch(`/api/v1/admin/events/${cid.id}`).set('X-CSRF-Token', csrf).send({ city: '  ' }).expect(400);
+    await agent.patch(`/api/v1/admin/events/${cid.id}`).set('X-CSRF-Token', csrf).send({ city: null }).expect(400);
+    expect((await agent.patch(`/api/v1/admin/events/${cid.id}`).set('X-CSRF-Token', csrf).send({ title: 'Renamed' }).expect(200)).body.city).toBe('Bhopal');
     await agent.post('/api/v1/admin/events').set('X-CSRF-Token', csrf).send(ev({ priceInPaise: 19900, playProductId: 'event_ticket_199' })).expect(201);
   });
   it('seat reservation never overbooks under concurrency', async () => {

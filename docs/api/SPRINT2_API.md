@@ -51,10 +51,32 @@ It handles subscription, one-time product, and voided purchase notifications. Vo
 ## Admin (role admin only; hosts get 403)
 | Method | Path |
 |---|---|
-| GET | /api/v1/admin/refunds?status=&page=&limit= |
+| GET | /api/v1/admin/refunds?status=&q=&page=&limit= |
 | POST | /api/v1/admin/refunds/:bookingId/approve (calls orders.refund) |
 | POST | /api/v1/admin/refunds/:bookingId/reject `{reason}` (final) |
-| GET | /api/v1/admin/payments?status=&userId=&eventId= (`purchaseToken` is never returned) |
+| GET | /api/v1/admin/payments?status=&userId=&eventId=&q=&page=&limit= (`purchaseToken` is never returned) |
 | POST | /api/v1/admin/events/:id/cancel → `{summary:{cancelledPending,cancelledFree,refunded,refundFailed}}`. Safe to re-run; failed refunds are retried by `refund.retry`. |
 
 `PATCH /admin/events/:id {status:"cancelled"}` returns `409 USE_CANCEL_ENDPOINT` when the event has bookings.
+
+### Admin list filters and item shape
+- `q` (optional, 1-80 chars after trimming) is a case-insensitive substring match on the user's name, phone or email. It is matched as plain text, not a regex. At most 200 matching users are considered. It can be combined with the other filters.
+- `eventId` (payments only) must be a valid ObjectId, otherwise `400`. It matches payments whose booking belongs to that event.
+- Each item has `user: { id, fullName, phone }`, read from `users` at query time. Names are not copied into payments or bookings. When the user no longer exists, `fullName` and `phone` are `null`.
+
+Payments response:
+```json
+{ "items": [{ "id": "…", "userId": "…", "user": { "id": "…", "fullName": "Asha Verma", "phone": "+9190…" },
+  "bookingId": "…|null", "kind": "ticket|chat_pass", "productId": "event_ticket_199", "orderId": "GPA.…",
+  "amountInPaise": 19900, "status": "verified|refunded|refund_failed|voided", "acknowledged": true,
+  "createdAt": "…", "refundedAt": "…|undefined" }], "page": 1, "limit": 20, "total": 1 }
+```
+Refunds response:
+```json
+{ "items": [{ "bookingId": "…", "status": "refund_requested|refunded|confirmed", "refund": { "status": "requested", "reason": "…", "requestedAt": "…" },
+  "amountInPaise": 19900, "playOrderId": "GPA.…", "user": { "id": "…", "fullName": "…", "phone": "…" },
+  "event": { "id": "…", "title": "…", "startsAt": "…" } }], "page": 1, "limit": 20, "total": 1 }
+```
+
+### Event city
+`POST /admin/events` requires `city`: a trimmed string of 1-60 characters, which the admin form must send. On `PATCH`, `city` is optional, but if it is sent it must be non-empty, so `""`, whitespace and `null` return 400. The database field stays optional so that older events without a city still load; they show `city: undefined` and are not matched by the `?city=` filter.
