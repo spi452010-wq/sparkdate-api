@@ -89,7 +89,10 @@ export class BullQueue implements JobQueue {
 let current: JobQueue = new MemoryQueue();
 export const getQueue = () => current;
 export const setQueue = (q: JobQueue) => { current = q; };
-export function initQueue(redisUrl: string, nodeEnv: string) {
+/** opts.worker=false: producer only (scripts that enqueue for the API's worker to run). */
+export function initQueue(redisUrl: string, nodeEnv: string, opts: { worker?: boolean } = {}) {
+  const worker = opts.worker ?? true;
+  if (redisUrl && !worker) { const q = new BullQueue(redisUrl, false); current = q; return q; }
   if (redisUrl) { const q = new BullQueue(redisUrl); current = q; q.repeatDaily('voided.sync', {}).catch((err) => logger.error({ err }, 'repeat schedule failed')); return q; }
   if (nodeEnv !== 'test') logger.warn('REDIS_URL not set: using in-process timers for jobs (dev only, jobs are lost on restart)');
   current = nodeEnv === 'test' ? new MemoryQueue() : new TimerQueue();

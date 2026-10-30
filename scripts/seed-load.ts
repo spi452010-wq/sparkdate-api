@@ -27,8 +27,9 @@ const N_PER_GENDER = 150;
 const INTERESTS = ['music', 'travel', 'movies', 'fitness', 'books', 'food', 'art', 'tech', 'cricket', 'dance'];
 const CITIES = ['Indore', 'Pune', 'Bhopal', 'Mumbai'];
 
-async function main() {
-  assertSafeSeedTarget(process.env); // before anything connects
+/** Seeds (or with clean=true removes) tagged data on the already-connected mongoose.
+ *  Sets up a producer-only job queue (REDIS_URL) so the API's worker runs the event timeline, and closes it before returning. */
+export async function runSeed(opts: { clean?: boolean; tag?: string; tokensFile?: string } = {}) {
   const mongoose = (await import('mongoose')).default;
   const { env } = await import('../src/config/env');
   const { User } = await import('../src/modules/users/user.model');
@@ -38,18 +39,19 @@ async function main() {
   const { RefreshToken } = await import('../src/modules/auth/refreshToken.model');
   const adminEvents = await import('../src/modules/events/adminEvents.service');
   const { issueTokens } = await import('../src/modules/auth/tokens');
-  const tag = process.env.SEED_TAG ?? 'load-seed';
-  await mongoose.connect(env.MONGO_URI);
+  const { initQueue } = await import('../src/jobs/queue');
+  const tag = opts.tag ?? process.env.SEED_TAG ?? 'load-seed';
   const tagged = { seedTag: tag };
+  const queue = opts.clean ? null : initQueue(env.REDIS_URL, env.NODE_ENV, { worker: false });
   try {
-    if (process.argv.includes('--clean')) {
+    if (opts.clean) {
       const users = (await User.collection.find(tagged, { projection: { _id: 1 } }).toArray()).map((u) => u._id);
       const r: Record<string, number> = {};
       r.refreshTokens = (await RefreshToken.collection.deleteMany({ user: { $in: users } })).deletedCount;
       for (const [name, M] of [['bookings', Booking], ['blocks', Block], ['events', Event], ['users', User]] as const)
         r[name] = (await (M as any).collection.deleteMany(tagged)).deletedCount;
       console.log(`seed:load --clean (${tag}):`, r);
-      return;
+      return { cleaned: r };
     }
     const startInMin = Number(process.env.SEED_START_IN_MIN ?? 5); const durMin = Number(process.env.SEED_DURATION_MIN ?? 60);
     const roundMinutes = Number(process.env.SEED_ROUND_MIN ?? 3);
@@ -86,12 +88,21 @@ async function main() {
 
     const tokens: string[] = [];
     for (const u of users) tokens.push((await issueTokens(String(u._id), 'user')).accessToken); // real signing via config secrets
-    const file = process.env.LOAD_TOKENS_FILE ?? './load-tokens.txt';
+    const file = opts.tokensFile ?? process.env.LOAD_TOKENS_FILE ?? './load-tokens.txt';
     writeFileSync(file, tokens.join('\n') + '\n', { mode: 0o600 }); chmodSync(file, 0o600);
     console.log(`seed:load (${tag}): ${users.length} users, ${bookings.length} confirmed bookings, ${blocks.length} blocks; tokens -> ${file}`);
     console.log(`event starts ${startsAt.toISOString()}, ${durMin} min, ${roundMinutes}-min rounds${env.REDIS_URL ? '' : ' (no REDIS_URL: timeline jobs were NOT shared with the API)'}`);
     console.log(`LOAD_EVENT_ID=${eventId}`);
-  } finally { await mongoose.disconnect(); }
+    return { eventId, tokens: tokens.length };
+  } finally { await queue?.close(); }
+}
+
+async function main() {
+  assertSafeSeedTarget(process.env); // before anything connects
+  const mongoose = (await import('mongoose')).default;
+  const { env } = await import('../src/config/env');
+  await mongoose.connect(env.MONGO_URI);
+  try { await runSeed({ clean: process.argv.includes('--clean') }); } finally { await mongoose.disconnect(); }
 }
 
 if (require.main === module) main().then(() => process.exit(0), (err) => { console.error(err instanceof Error ? err.message : err); process.exit(1); });
