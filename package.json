@@ -9,7 +9,8 @@
     "test": "jest --runInBand",
     "create-admin": "ts-node-dev --transpile-only src/scripts/createAdmin.ts",
     "create-admin:prod": "node dist/scripts/createAdmin.js",
-    "load:live": "ts-node-dev --transpile-only scripts/loadLive.ts"
+    "load:live": "ts-node-dev --transpile-only scripts/loadLive.ts",
+    "seed:load": "ts-node-dev --transpile-only scripts/seed-load.ts"
   },
   "dependencies": {
     "@googleapis/androidpublisher": "^42.2.0",

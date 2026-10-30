@@ -73,6 +73,13 @@ One room per date: `evt_{eventId}_r{round}_{dateId}`. Identity = userId. Grant: 
 ## Load test (opt-in, not in jest)
 `LOAD_URL=... LOAD_EVENT_ID=... LOAD_TOKENS_FILE=tokens.txt LOAD_SOCKETS=300 npm run load:live`
 
+### Seeding load data (`npm run seed:load`)
+Creates one published event (starts in `SEED_START_IN_MIN`=5 min, runs `SEED_DURATION_MIN`=60 min, `SEED_ROUND_MIN`=3-min rounds) with 150 male + 150 female approved, profile-complete users, confirmed bookings, and 8 opposite-gender blocks. Writes 300 access JWTs (real signing from config, one per line, mode 600) to `./load-tokens.txt` (override `LOAD_TOKENS_FILE`; gitignored) and prints `LOAD_EVENT_ID=<id>`.
+- Safety: refuses `NODE_ENV=production`; refuses any `MONGO_URI` host other than `localhost`/`127.0.0.1`/`mongodb-memory` unless `SEED_ALLOW_REMOTE=1` **and** the db name contains `test`. Never drops data; every inserted doc carries `seedTag` (`SEED_TAG`, default `load-seed`).
+- `npm run seed:load -- --clean` deletes only docs with that `seedTag` (plus the seeded users' refresh tokens).
+- Timeline jobs (lobby open/start/end) are scheduled through the events service; set `REDIS_URL` to the API's Redis so the running server executes them.
+- Then: `LOAD_EVENT_ID=<id> LOAD_TOKENS_FILE=load-tokens.txt npm run load:live`.
+
 ## Owner setup
 - LiveKit Cloud or self-hosted: key/secret + `wss://` URL; set room `emptyTimeout` ~30 s.
 - Redis for multi-node (adapter, presence, jobs).
