@@ -31,6 +31,35 @@ if (!parsed.success) {
   process.exit(1);
 }
 export const env = parsed.data;
+
+const SECRET_KEYS = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'MEDIA_URL_SECRET'] as const;
+const PLACEHOLDER_RE = /change[-_ ]?me|changeme|example|placeholder|your[-_]|secret123|^x+$/i;
+
+/**
+ * Returns names (never values) of secrets that are unsafe for production:
+ * placeholder-looking values (e.g. from the public .env.example) or secrets reused across keys.
+ */
+export function findUnsafeSecrets(e: Record<string, string | undefined>): string[] {
+  const bad = new Set<string>();
+  for (const k of SECRET_KEYS) {
+    const v = e[k] ?? '';
+    if (PLACEHOLDER_RE.test(v)) bad.add(k);
+  }
+  for (let i = 0; i < SECRET_KEYS.length; i++)
+    for (let j = i + 1; j < SECRET_KEYS.length; j++)
+      if (e[SECRET_KEYS[i]] && e[SECRET_KEYS[i]] === e[SECRET_KEYS[j]]) {
+        bad.add(SECRET_KEYS[i]); bad.add(SECRET_KEYS[j]);
+      }
+  return [...bad];
+}
+
+if (env.NODE_ENV === 'production') {
+  const unsafe = findUnsafeSecrets(env as unknown as Record<string, string>);
+  if (unsafe.length) {
+    console.error('Refusing to start: placeholder or reused secrets in production:', unsafe);
+    process.exit(1);
+  }
+}
 if (env.NODE_ENV === 'production' && env.WHATSAPP_PROVIDER === 'console') {
   console.error('WHATSAPP_PROVIDER=console is not allowed in production');
   process.exit(1);

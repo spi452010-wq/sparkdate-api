@@ -19,3 +19,7 @@ Needs Node 20+ and MongoDB. `WHATSAPP_PROVIDER=console` prints OTPs to the log a
 
 ## Not in this drop
 Events CRUD and seat booking (S1-4), Google Play Billing, LiveKit, chat (later sprints). Admin login currently uses the same OTP/Google login with role `admin`; a cookie-based admin session for the React panel comes with S1-4.
+
+## Production secrets
+
+In `NODE_ENV=production` the server refuses to start if `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` or `MEDIA_URL_SECRET` look like placeholders (for example the `change-me` values in `.env.example`) or are reused across keys. Generate each one with `openssl rand -base64 48`.
