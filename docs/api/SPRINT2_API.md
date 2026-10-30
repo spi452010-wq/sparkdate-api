@@ -12,41 +12,49 @@ Other errors: `409 IDEMPOTENCY_IN_PROGRESS` while the first request is still run
 ## Events (app)
 | Method | Path | Notes |
 |---|---|---|
-| GET | /api/v1/events?status=upcoming\|past&city=&q=&limit=&cursor= | Published or live events. Returns `{items, nextCursor}`; each item has `seatsLeft` for the caller's gender. Sent with `Cache-Control: private, max-age=60`. |
-| GET | /api/v1/events/:id | Adds `myBooking`, `liked` and `saved`. |
+| GET | /api/v1/events?status=upcoming\|live&city=&q=&limit=&cursor= | `upcoming` (default): published events that have not started. `live`: events currently live. Returns `{items, nextCursor}`; each item has `seatsLeft` for the caller's gender. Sent with `Cache-Control: private, max-age=60`. |
+| GET | /api/v1/events/:id | Adds `myBooking`, `liked` and `saved`. A missing or hidden event returns `404 NOT_FOUND`. |
 | POST/DELETE | /api/v1/events/:id/like, /save | Idempotent. |
 | GET | /api/v1/me/events/saved | Saved events. |
 
 ## Bookings
 | Method | Path | Result |
 |---|---|---|
-| POST | /api/v1/bookings `{eventId}` | Returns `201 {booking, play?}`. A free event is confirmed at once. A paid event becomes `pending`, holds the seat for `BOOKING_HOLD_MIN`, and returns `play: {productId, obfuscatedAccountId, obfuscatedProfileId}`. Pass these to BillingFlowParams. If the caller already has an active booking, returns `200` with it. |
+| POST | /api/v1/bookings `{eventId}` | Returns `201 {booking, play?}`. A free event is confirmed at once. A paid event becomes `pending`, holds the seat for `BOOKING_HOLD_MIN`, and returns `play: {productId, obfuscatedAccountId}`. Set `obfuscatedAccountId` as the purchase's account id (Flutter `in_app_purchase`: `applicationUserName`). If the caller already has an active booking, returns `200` with it. |
 | DELETE | /api/v1/bookings/:id | Cancels a `pending` booking and releases the seat. Otherwise returns `409 BOOKING_NOT_CANCELLABLE`. |
 | POST | /api/v1/bookings/:id/refund-request `{reason}` | Allowed only when `refundEligible`, which is set by the post-event finalize job. |
 | GET | /api/v1/me/bookings | Returns `{upcoming, past}`. |
 
-Errors: `PROFILE_INCOMPLETE`, `VERIFICATION_REQUIRED` (403), `EVENT_NOT_FOUND` (404), `EVENT_NOT_BOOKABLE`, `EVENT_FULL`, `REFUND_NOT_ELIGIBLE`, `REFUND_ALREADY_REQUESTED`, `REFUND_REJECTED` (409). Another user's booking returns 404.
+Errors: `PROFILE_INCOMPLETE`, `VERIFICATION_REQUIRED` (403), `NOT_FOUND` (404, missing event), `BOOKING_NOT_FOUND` (404), `EVENT_NOT_BOOKABLE`, `EVENT_FULL`, `REFUND_NOT_ELIGIBLE`, `REFUND_ALREADY_REQUESTED`, `REFUND_REJECTED` (409). Another user's booking returns 404.
 
 ## Payments
-`POST /api/v1/payments/play/verify` takes `{purchaseToken, productId, kind: "ticket"|"chat_pass", bookingId?}`.
-The server reads the purchase from Play, checks the product, account id and booking id, saves the token, and acknowledges the purchase. If the acknowledgement fails, the `payment.ack` job retries it.
-- `200 {booking}` or `200 {chatPass}`: done.
-- `202 {status:"pending"}`: the payment is pending, for example UPI. The hold is extended by `PENDING_PURCHASE_HOLD_MIN`, and the RTDN completes the purchase.
+`POST /api/v1/payments/play/verify` takes `{purchaseToken, productId, kind: "ticket"|"chat_pass", bookingId}`; `bookingId` is required when `kind` is `ticket`.
+The server reads the purchase from Play and checks, for tickets:
+- the booking belongs to the caller (otherwise `404 BOOKING_NOT_FOUND`) and is `pending` (an `expired`/`cancelled` hold takes the late-purchase path below; anything else is `409 BOOKING_NOT_PENDING`, except a retry with the same token);
+- `productId` equals the event's `playProductId` (otherwise `400 PRODUCT_MISMATCH`);
+- the purchase's `obfuscatedExternalAccountId` is present and equals the caller's user id (otherwise `400 PURCHASE_INVALID`);
+- `obfuscatedExternalProfileId` is not required; if Play returns one it must equal `bookingId` (otherwise `400 PURCHASE_INVALID`);
+- a purchase token is used once: it cannot confirm a second booking or be used by another user (`409 PURCHASE_ALREADY_USED`).
+
+It then saves the token and acknowledges the purchase. If the acknowledgement fails, the `payment.ack` job retries it.
+- `200 {status:"confirmed", booking}` (ticket) or `200 {status:"confirmed", chatPassUntil}` (chat pass): done.
+- `202 {status:"pending"}` (chat pass) or `202 {status:"pending", booking}` (ticket): the payment is pending, for example UPI. A ticket hold is extended by `PENDING_PURCHASE_HOLD_MIN`, and the RTDN completes the purchase.
 - `400 PURCHASE_INVALID | PRODUCT_MISMATCH`
-- `409 PURCHASE_ALREADY_USED`
+- `404 BOOKING_NOT_FOUND`
+- `409 PURCHASE_ALREADY_USED | BOOKING_NOT_PENDING`
 - `409 EVENT_FULL_REFUNDED`: the hold had expired and the seat was taken, so the order is refunded automatically.
 - `503 PLAY_UNAVAILABLE`: retry later.
 
-`GET /api/v1/subscriptions/me` returns `{chatPass: {active, expiresAt, autoRenewing, state}}`.
+`GET /api/v1/subscriptions/me` returns `{chatPass: {active, expiresAt, productId, autoRenewing, state}}`.
 
 ## Notifications (in-app)
-`GET /api/v1/notifications?cursor=` and `POST /api/v1/notifications/read {ids?}` (with no ids, marks all as read).
+`GET /api/v1/notifications?before=<ISO time>&limit=` (newest first, `limit` 1-50, default 20) returns `{items}`; for the next page pass the last item's `createdAt` as `before`. `POST /api/v1/notifications/read {ids?}` returns `{updated}` (with no ids, marks all as read).
 Types: booking_confirmed, event_reminder, event_cancelled, refund_processed, refund_rejected, chat_pass_expiring. FCM push is a stub until Firebase is configured.
 
 ## Webhook
 `POST /api/v1/webhooks/play` receives Pub/Sub push. It requires an OIDC bearer token whose audience is `PUBSUB_PUSH_AUDIENCE` and whose email is `PUBSUB_SA_EMAIL`, otherwise it returns 401.
 Messages are deduplicated by `messageId`. Messages from other packages are ignored. The handler returns 204 and processes the message in the `webhook.process` job.
-It handles subscription, one-time product, and voided purchase notifications. Voided purchases are also reconciled daily by the `voided.sync` job.
+It handles subscription, one-time product, and voided purchase notifications. A one-time purchase without `obfuscatedExternalProfileId` (Flutter) is applied to the user's latest `pending` booking for an event with that `playProductId`. Voided purchases are also reconciled daily by the `voided.sync` job.
 
 ## Admin (role admin only; hosts get 403)
 | Method | Path |
