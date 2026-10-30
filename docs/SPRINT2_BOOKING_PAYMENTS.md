@@ -34,7 +34,7 @@ Release = `$inc:{"booked.<g>":-1}` guarded by booking status transition (findOne
 
 ## 4. Play purchase verification
 - Ticket: Play API `purchases.products.get(packageName, productId, token)`. Accept only if purchaseState=0 (purchased),
-  productId == event.playProductId, obfuscatedExternalAccountId == userId, obfuscatedExternalProfileId == bookingId,
+  productId == event.playProductId, obfuscatedExternalAccountId == userId (set via in_app_purchase applicationUserName), bookingId taken from request body and must belong to the user and be pending/expired,
   and token not already in `payments` (unique index). Then in this order: insert payment(verified) -> confirm booking
   -> `purchases.products.acknowledge` -> mark payment acknowledged. App then consumes the purchase.
 - If booking already expired when a valid purchase arrives: re-try the seat hold; if full, confirm nothing and refund via `orders.refund` immediately, return 409 `EVENT_FULL_REFUNDED`.
