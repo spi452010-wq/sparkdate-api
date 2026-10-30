@@ -30,7 +30,7 @@ Release = `$inc:{"booked.<g>":-1}` guarded by booking status transition (findOne
 | DELETE | /bookings/:id | only while `pending` |
 | POST | /payments/play/verify `{bookingId?, purchaseToken, productId, kind:"ticket"\|"chat_pass"}` | see 4 |
 | POST | /bookings/:id/refund-request `{reason}` | allowed only if refundEligible (see 6) |
-| GET | /me/subscription | chat pass status |
+| GET | /subscriptions/me | chat pass status (name matches Flutter mock) |
 
 ## 4. Play purchase verification
 - Ticket: Play API `purchases.products.get(packageName, productId, token)`. Accept only if purchaseState=0 (purchased),
