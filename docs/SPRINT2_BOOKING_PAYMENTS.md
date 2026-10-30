@@ -78,3 +78,8 @@ REDIS_URL, BOOKING_HOLD_MIN=10, AUTO_REFUND_NO_MATCH=false, FCM_SA_JSON_PATH.
 ## 11. QA focus
 Last-seat race (N parallel POST /bookings), hold expiry vs late purchase, token replay, pending UPI purchase,
 double refund request, RTDN duplicate delivery, admin event cancel with mixed free/paid bookings.
+
+
+## Addendum (2026-10-30)
+- Purchase token already linked to another booking -> `409 PURCHASE_TOKEN_USED` (distinct from `BOOKING_NOT_PENDING`).
+- `POST /admin/payments/:id/link` body `{bookingId}`: payment must be `unlinked`; booking must belong to payment's user, be pending/expired, product must match. On success: confirm booking, then acknowledge the Play purchase. Errors: `PAYMENT_NOT_UNLINKED`, `BOOKING_MISMATCH`. Audit-logged. Must happen within Play's 3-day acknowledge window, else Google auto-refunds.

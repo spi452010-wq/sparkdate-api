@@ -13,6 +13,7 @@ Client -> server (all acked with `{ok, error?}`):
 |---|---|---|
 | `event:join` | `{eventId}` | needs confirmed booking; sets `bookings.attendedAt` (first time); adds to waiting set |
 | `event:leave` | `{eventId}` | removes from queue; ends current date as early_disconnect |
+| `date:leave` | `{dateId}` | ends only the current date early (outcome early_end); partner gets `partner:left`; caller stays in event and re-enters queue next round |
 | `date:decision` | `{dateId, decision: "like"\|"pass"\|"save"}` | once per user per date, within 60 s after round end |
 | `date:spark` | `{dateId}` | relayed to partner, rate limit 1/3 s |
 | `presence:ping` | `{}` | every 10 s |
@@ -21,14 +22,14 @@ Server -> client:
 | event | payload |
 |---|---|
 | `lobby:state` | `{eventId, round, status, waiting, nextRoundAt}` |
-| `match:found` | `{dateId, round, partner:{id, fullName, age, city, photoUrl, interests}, livekit:{url, room, token}, startsAt, endsAt}` |
+| `match:found` | `{dateId, round, partner:{id, fullName, age, city, bio, photoUrl, interests}, livekit:{url, room, token}, startsAt, endsAt}` |
 | `round:started` | `{dateId, endsAt}` (server time; client computes countdown from endsAt minus serverTimeOffset) |
 | `round:ended` | `{dateId, decisionDeadline}` |
 | `partner:left` | `{dateId, reason: "disconnect"\|"left"}` |
 | `connection:mutual` | `{connectionId, partner}` |
 | `no:match` | `{round}` (sat out this round, odd gender counts) |
 | `event:ended` | `{eventId, datesCompleted}` |
-`GET /live/time` returns server time for offset sync.
+`GET /live/time` returns `{serverTime}` (epoch ms) for offset sync. Socket: API origin, default path `/socket.io`, namespace `/live`.
 
 ## 3. Matching (per round, job `round.tick:{eventId}:{n}`)
 1. Take present users from Redis `live:{e}:waiting:male|female` (presence TTL 30 s).
