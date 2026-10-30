@@ -68,3 +68,6 @@ LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, ROUND_BREAK_SEC=30, DECISION_W
 ## 10. QA focus
 Simultaneous join/leave at round tick, odd counts, no re-pairing, reconnect within/after grace, decision after deadline rejected,
 token cannot join another room, 300 simulated sockets load test.
+
+## Requeue rule (2026-10-30)
+Server auto-requeues: after a date ends for any reason (round end, pass, `date:leave`, partner left, decision timeout), the user stays in the event queue for the next round. Clients never re-send `event:join` except after a socket reconnect. `early_end` counts as attended.
