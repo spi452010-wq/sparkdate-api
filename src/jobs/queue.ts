@@ -1,7 +1,8 @@
 import { logger } from '../utils/logger';
 
 export type JobName = 'booking.expire' | 'payment.ack' | 'payment.reconcile' | 'event.finalize' | 'webhook.process' | 'refund.retry'
-  | 'notify.reminder' | 'notify.chatPassExpiring' | 'voided.sync';
+  | 'notify.reminder' | 'notify.chatPassExpiring' | 'voided.sync'
+  | 'event.open' | 'event.start' | 'event.end' | 'round.tick' | 'round.end' | 'round.decide' | 'live.grace';
 export interface JobOpts { delayMs?: number; jobId?: string }
 export type Handler = (data: any) => Promise<void>;
 
