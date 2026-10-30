@@ -175,7 +175,7 @@ describe('play verification', () => {
     expect(play.acks).toEqual([token]);
     await verify(u, ticket(bookingId, token)).expect(200); // same user retry is idempotent
     const u2 = await appUser(); const b2 = (await book(u2, eid).expect(201)).body.booking;
-    expect((await verify(u2, ticket(b2.id, token)).expect(409)).body.error.code).toBe('PURCHASE_ALREADY_USED');
+    expect((await verify(u2, ticket(b2.id, token)).expect(409)).body.error.code).toBe('PURCHASE_TOKEN_USED');
     expect(await Payment.countDocuments()).toBe(1);
   });
   it('rejects mismatched product, foreign booking, cancelled state, unknown token; Play outage is 503', async () => {
@@ -213,13 +213,22 @@ describe('play verification', () => {
       expect((await verify(u, ticket(ob.id, 'tok-flutter-foreign')).expect(404)).body.error.code).toBe('BOOKING_NOT_FOUND');
       expect((await Booking.findById(ob.id))!.status).toBe('pending');
     });
+    it('token of another booking on a confirmed booking is PURCHASE_TOKEN_USED; a new token on it is BOOKING_NOT_PENDING; same-token retry stays 200', async () => {
+      const u = await appUser();
+      const p1 = await paidConfirmed(u, await paidEvent()); const p2 = await paidConfirmed(u, await paidEvent());
+      expect((await verify(u, ticket(p2.bookingId, p1.token)).expect(409)).body.error.code).toBe('PURCHASE_TOKEN_USED');
+      purchase('tok-fresh-on-confirmed', u.id, p2.bookingId, flutter);
+      expect((await verify(u, ticket(p2.bookingId, 'tok-fresh-on-confirmed')).expect(409)).body.error.code).toBe('BOOKING_NOT_PENDING');
+      expect((await verify(u, ticket(p2.bookingId, p2.token)).expect(200)).body.status).toBe('confirmed');
+      expect(await Payment.countDocuments({ userId: u.id })).toBe(2);
+    });
     it('one purchase token cannot confirm two bookings', async () => {
       const u = await appUser();
       const b1 = (await book(u, await paidEvent()).expect(201)).body.booking;
       const b2 = (await book(u, await paidEvent()).expect(201)).body.booking;
       purchase('tok-flutter-twice', u.id, b1.id, flutter);
       await verify(u, ticket(b1.id, 'tok-flutter-twice')).expect(200);
-      expect((await verify(u, ticket(b2.id, 'tok-flutter-twice')).expect(409)).body.error.code).toBe('PURCHASE_ALREADY_USED');
+      expect((await verify(u, ticket(b2.id, 'tok-flutter-twice')).expect(409)).body.error.code).toBe('PURCHASE_TOKEN_USED');
       expect((await Booking.findById(b2.id))!.status).toBe('pending');
       expect(await Payment.countDocuments({ purchaseToken: 'tok-flutter-twice' })).toBe(1);
     });
@@ -324,7 +333,7 @@ describe('play verification', () => {
     expect(s).toMatchObject({ active: true, expiresAt: exp, autoRenewing: true });
     expect(play.acks).toContain('sub-tok-12345');
     const other = await appUser();
-    expect((await verify(other, { purchaseToken: 'sub-tok-12345', productId: 'chat_pass_monthly', kind: 'chat_pass' }).expect(409)).body.error.code).toBe('PURCHASE_ALREADY_USED');
+    expect((await verify(other, { purchaseToken: 'sub-tok-12345', productId: 'chat_pass_monthly', kind: 'chat_pass' }).expect(409)).body.error.code).toBe('PURCHASE_TOKEN_USED');
     play.subs.get('sub-tok-12345')!.subscriptionState = 'SUBSCRIPTION_STATE_REVOKED';
     await push({ subscriptionNotification: { notificationType: 12, purchaseToken: 'sub-tok-12345', subscriptionId: 'chat_pass_monthly' } }).expect(204);
     await q().runDue(Date.now(), 'webhook.process');

@@ -41,7 +41,7 @@ Release = `$inc:{"booked.<g>":-1}` guarded by booking status transition (findOne
 - purchaseState=2 (pending, e.g. UPI pending): keep booking pending, extend hold to 30 min, wait for RTDN.
 - Chat Pass: `purchases.subscriptionsv2.get`; set `users.chatPassUntil = lineItems[0].expiryTime`; acknowledge.
 - Unacknowledged after 10 min (crash): `payments.acknowledge` retry job, until Google's 3-day limit.
-- Errors: `PURCHASE_INVALID`, `PURCHASE_ALREADY_USED`, `PRODUCT_MISMATCH`, `PLAY_UNAVAILABLE` (retryable, 503).
+- Errors: `PURCHASE_INVALID`, `PURCHASE_TOKEN_USED`, `PRODUCT_MISMATCH`, `PLAY_UNAVAILABLE` (retryable, 503).
 
 ## 5. Webhooks
 - POST /webhooks/play: Google Cloud Pub/Sub push, verify the OIDC JWT (audience = our URL, email = Pub/Sub service account).

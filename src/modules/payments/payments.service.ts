@@ -65,7 +65,8 @@ export async function finalizeTicket(userId: string, bookingId: string, productI
   if (p.obfuscatedExternalProfileId && p.obfuscatedExternalProfileId !== bookingId) throw new AppError(400, 'PURCHASE_INVALID', 'Purchase does not belong to this booking');
   if (!['pending', 'expired', 'cancelled'].includes(b.status)) { // only a pending booking (or the expired-retry path) can be paid; same-token retries stay idempotent
     const prev = await paymentRepository.findOne({ purchaseToken: token }).select('userId bookingId');
-    if (!prev || String(prev.userId) !== userId || String(prev.bookingId) !== bookingId) throw new AppError(409, 'BOOKING_NOT_PENDING');
+    if (prev && (String(prev.userId) !== userId || String(prev.bookingId) !== bookingId)) throw new AppError(409, 'PURCHASE_TOKEN_USED');
+    if (!prev) throw new AppError(409, 'BOOKING_NOT_PENDING');
   }
   if (p.purchaseState === 2) { // pending (e.g. UPI): keep the seat a bit longer and wait for RTDN
     const until = new Date(Date.now() + env.PENDING_PURCHASE_HOLD_MIN * MIN);
@@ -87,7 +88,7 @@ export async function finalizeTicket(userId: string, bookingId: string, productI
     if (prev?.status === 'unlinked' && String(prev.userId) === userId)
       pay = await paymentRepository.findOneAndUpdate({ _id: prev._id, status: 'unlinked' },
         { $set: { bookingId, status: 'verified', amountInPaise: b.amountInPaise || ev.priceInPaise }, $unset: { flaggedAt: 1 } }, { new: true });
-    if (!pay) throw new AppError(409, 'PURCHASE_ALREADY_USED');
+    if (!pay) throw new AppError(409, 'PURCHASE_TOKEN_USED');
   }
   if (!pay.acknowledged) await getQueue().add('payment.ack', { paymentId: String(pay._id) }, { jobId: jobId('ack', String(pay._id)), delayMs: 10 * MIN });
   const set = { status: 'confirmed', paymentId: pay._id, playOrderId: p.orderId, confirmedAt: new Date() };
@@ -133,7 +134,7 @@ export async function verifyChatPass(userId: string, productId: string, token: s
   catch (e: any) {
     if (e?.code !== 11000) throw e;
     pay = await paymentRepository.findOne({ purchaseToken: token });
-    if (!pay || String(pay.userId) !== userId || pay.kind !== 'chat_pass') throw new AppError(409, 'PURCHASE_ALREADY_USED');
+    if (!pay || String(pay.userId) !== userId || pay.kind !== 'chat_pass') throw new AppError(409, 'PURCHASE_TOKEN_USED');
   }
   const until = await applySubscription(userId, token, sub);
   if (!pay.acknowledged) {
@@ -235,7 +236,7 @@ export async function syncVoided() {
 export async function verifyPurchase(uid: string, { bookingId, purchaseToken, productId, kind }: { bookingId?: string; purchaseToken: string; productId: string; kind: 'ticket' | 'chat_pass' }) {
   const prev = await paymentRepository.findOne({ purchaseToken }).select('userId bookingId kind status');
   if (prev && (String(prev.userId) !== uid || prev.kind !== kind || (kind === 'ticket' && prev.status !== 'unlinked' && String(prev.bookingId) !== bookingId)))
-    throw new AppError(409, 'PURCHASE_ALREADY_USED');
+    throw new AppError(409, 'PURCHASE_TOKEN_USED');
   if (kind === 'chat_pass') return verifyChatPass(uid, productId, purchaseToken);
   const p = await getPlayClient().getProduct(productId, purchaseToken).catch((e) => { throw mapPlayError(e); });
   const r = await finalizeTicket(uid, bookingId!, productId, purchaseToken, p);

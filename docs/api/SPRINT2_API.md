@@ -34,14 +34,14 @@ The server reads the purchase from Play and checks, for tickets:
 - `productId` equals the event's `playProductId` (otherwise `400 PRODUCT_MISMATCH`);
 - the purchase's `obfuscatedExternalAccountId` is present and equals the caller's user id (otherwise `400 PURCHASE_INVALID`);
 - `obfuscatedExternalProfileId` is not required; if Play returns one it must equal `bookingId` (otherwise `400 PURCHASE_INVALID`);
-- a purchase token is used once: it cannot confirm a second booking or be used by another user (`409 PURCHASE_ALREADY_USED`).
+- a purchase token is used once: it cannot confirm a second booking or be used by another user (`409 PURCHASE_TOKEN_USED`, also when sent for a booking that is already confirmed by a different token). `BOOKING_NOT_PENDING` is only for a new, unused token on a booking that is not pending; re-verifying the same token for the same booking returns `200` (idempotent).
 
 It then saves the token and acknowledges the purchase. If the acknowledgement fails, the `payment.ack` job retries it.
 - `200 {status:"confirmed", booking}` (ticket) or `200 {status:"confirmed", chatPassUntil}` (chat pass): done.
 - `202 {status:"pending"}` (chat pass) or `202 {status:"pending", booking}` (ticket): the payment is pending, for example UPI. A ticket hold is extended by `PENDING_PURCHASE_HOLD_MIN`, and the RTDN completes the purchase.
 - `400 PURCHASE_INVALID | PRODUCT_MISMATCH`
 - `404 BOOKING_NOT_FOUND`
-- `409 PURCHASE_ALREADY_USED | BOOKING_NOT_PENDING`
+- `409 PURCHASE_TOKEN_USED | BOOKING_NOT_PENDING`
 - `409 EVENT_FULL_REFUNDED`: the hold had expired and the seat was taken, so the order is refunded automatically.
 - `503 PLAY_UNAVAILABLE`: retry later.
 
