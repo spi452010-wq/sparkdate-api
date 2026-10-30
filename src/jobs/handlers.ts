@@ -1,12 +1,14 @@
 import { registerHandler } from './queue';
-import * as svc from '../modules/bookings/booking.service';
-import { processWebhookEvent } from '../modules/webhooks/play.routes';
+import * as bookings from '../modules/bookings/bookings.service';
+import * as payments from '../modules/payments/payments.service';
+import * as refunds from '../modules/refunds/refunds.service';
+import { processWebhookEvent } from '../modules/webhooks/webhooks.service';
 
-registerHandler('booking.expire', (d) => svc.expireBooking(d.bookingId));
-registerHandler('payment.ack', (d) => svc.retryAck(d.paymentId));
-registerHandler('refund.retry', (d) => svc.retryRefund(d.paymentId));
-registerHandler('event.finalize', (d) => svc.finalizeEvent(d.eventId));
-registerHandler('notify.reminder', (d) => svc.sendReminder(d));
-registerHandler('notify.chatPassExpiring', (d) => svc.passExpiring(d));
-registerHandler('voided.sync', () => svc.syncVoided());
+registerHandler('booking.expire', (d) => bookings.expireBooking(d.bookingId));
+registerHandler('payment.ack', (d) => payments.retryAck(d.paymentId));
+registerHandler('refund.retry', (d) => payments.retryRefund(d.paymentId));
+registerHandler('event.finalize', (d) => refunds.finalizeEvent(d.eventId));
+registerHandler('notify.reminder', (d) => bookings.sendReminder(d));
+registerHandler('notify.chatPassExpiring', (d) => payments.passExpiring(d));
+registerHandler('voided.sync', () => payments.syncVoided());
 registerHandler('webhook.process', (d) => processWebhookEvent(d.id));
