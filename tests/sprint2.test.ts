@@ -233,10 +233,35 @@ describe('play verification', () => {
     await q().runDue(Date.now(), 'webhook.process');
     expect((await Booking.findById(b1.id))!.status).toBe('pending');
     expect((await Booking.findById(b2.id))!.status).toBe('pending');
-    expect(await Payment.countDocuments({ purchaseToken: 'tok-ambiguous-1' })).toBe(0);
+    const unlinked = await Payment.findOne({ purchaseToken: 'tok-ambiguous-1' });
+    expect(unlinked).toMatchObject({ status: 'unlinked' }); expect(unlinked!.bookingId).toBeUndefined();
     expect((await verify(u, ticket(b2.id, 'tok-ambiguous-1')).expect(200)).body.status).toBe('confirmed');
+    const linked = await Payment.findOne({ purchaseToken: 'tok-ambiguous-1' });
+    expect(linked).toMatchObject({ status: 'verified' }); expect(String(linked!.bookingId)).toBe(b2.id);
+    expect(await Payment.countDocuments({ purchaseToken: 'tok-ambiguous-1' })).toBe(1);
+    await q().runDue(Date.now() + 16 * 60_000, 'payment.reconcile'); // linked in time: not flagged
+    expect((await Payment.findById(linked!._id))!.flaggedAt).toBeUndefined();
     expect((await Booking.findById(b2.id))!.status).toBe('confirmed');
     expect((await Booking.findById(b1.id))!.status).toBe('pending');
+  });
+  it('unlinked webhook purchase is flagged by reconcile for admins (no auto-refund) and an admin can link it', async () => {
+    const u = await appUser();
+    const b1 = (await book(u, await paidEvent()).expect(201)).body.booking;
+    await book(u, await paidEvent()).expect(201);
+    purchase('tok-unlinked-2', u.id, b1.id, { obfuscatedExternalProfileId: undefined });
+    await push({ oneTimeProductNotification: { notificationType: 1, purchaseToken: 'tok-unlinked-2', sku: 'event_ticket_199' } }).expect(204);
+    await q().runDue(Date.now(), 'webhook.process');
+    await q().runDue(Date.now() + 16 * 60_000, 'payment.reconcile');
+    const pay = await Payment.findOne({ purchaseToken: 'tok-unlinked-2' });
+    expect(pay!.status).toBe('unlinked'); expect(pay!.flaggedAt).toBeInstanceOf(Date);
+    expect(play.refunds).toHaveLength(0);
+    const a = await admin();
+    const list = (await a.agent.get('/api/v1/admin/payments?status=unlinked').expect(200)).body;
+    expect(list.items.map((i: any) => i.id)).toContain(String(pay!._id));
+    expect(list.items.find((i: any) => i.id === String(pay!._id)).flaggedAt).toBeTruthy();
+    expect((await a.agent.post(`/api/v1/admin/payments/${pay!._id}/link`).set('X-CSRF-Token', a.csrf).send({ bookingId: b1.id }).expect(200)).body.status).toBe('confirmed');
+    expect((await Booking.findById(b1.id))!.status).toBe('confirmed');
+    expect((await Payment.findById(pay!._id))!.status).toBe('verified');
   });
   it('hold expiry vs late purchase: re-holds if seat free, refunds if full', async () => {
     const eid = await paidEvent({ capacity: { male: 1, female: 1 } }); const u = await appUser(); const u2 = await appUser();

@@ -83,7 +83,11 @@ export async function finalizeTicket(userId: string, bookingId: string, productI
     const prev = await paymentRepository.findOne({ purchaseToken: token });
     if (prev && String(prev.userId) === userId && String(prev.bookingId) === bookingId)
       return { status: 'confirmed', booking: await bookingRepository.findById(bookingId) }; // retry of an already-applied purchase
-    throw new AppError(409, 'PURCHASE_ALREADY_USED');
+    // A purchase saved as unlinked by the webhook: link it to this booking (atomic, so it can be linked only once).
+    if (prev?.status === 'unlinked' && String(prev.userId) === userId)
+      pay = await paymentRepository.findOneAndUpdate({ _id: prev._id, status: 'unlinked' },
+        { $set: { bookingId, status: 'verified', amountInPaise: b.amountInPaise || ev.priceInPaise }, $unset: { flaggedAt: 1 } }, { new: true });
+    if (!pay) throw new AppError(409, 'PURCHASE_ALREADY_USED');
   }
   if (!pay.acknowledged) await getQueue().add('payment.ack', { paymentId: String(pay._id) }, { jobId: jobId('ack', String(pay._id)), delayMs: 10 * MIN });
   const set = { status: 'confirmed', paymentId: pay._id, playOrderId: p.orderId, confirmedAt: new Date() };
@@ -174,7 +178,7 @@ export async function onOneTimeRtdn(n: { notificationType: number; purchaseToken
     const eventIds = await eventRepository.distinct('_id', { playProductId: n.sku });
     const pending = await bookingRepository.find({ userId, eventId: { $in: eventIds }, status: 'pending' }).select('_id').limit(2);
     // Never guess: only an unambiguous single pending booking is auto-confirmed. Otherwise the app's verify call (with bookingId) applies it.
-    if (pending.length !== 1) { logger.warn({ sku: n.sku, matches: pending.length }, 'RTDN purchase without bookingId left for app verify'); return 'ignored'; }
+    if (pending.length !== 1) return saveUnlinked(userId, n.sku, n.purchaseToken, p, pending.length);
     bookingId = String(pending[0]._id);
   }
   if (!isId(bookingId)) return 'ignored';
@@ -182,6 +186,32 @@ export async function onOneTimeRtdn(n: { notificationType: number; purchaseToken
   try { await finalizeTicket(userId, bookingId, n.sku, n.purchaseToken, p); }
   catch (e) { if (e instanceof AppError && e.status < 500) { logger.warn({ code: e.code }, 'RTDN purchase not applied'); return 'ignored'; } throw e; }
   return 'processed';
+}
+const RECONCILE_MIN = 15;
+/** Webhook purchase whose booking cannot be determined: keep it (never guess, never auto-refund) and check again later. */
+async function saveUnlinked(userId: string, productId: string, token: string, p: ProductPurchase, matches: number) {
+  let pay: any;
+  try {
+    pay = await paymentRepository.create({ userId, kind: 'ticket', productId, purchaseToken: token, orderId: p.orderId, status: 'unlinked',
+      purchaseTime: p.purchaseTimeMillis ? new Date(Number(p.purchaseTimeMillis)) : new Date(), acknowledged: p.acknowledgementState === 1 });
+  } catch (e: any) { if (e?.code === 11000) return 'ignored'; throw e; }
+  logger.warn({ paymentId: String(pay._id), productId, matches }, 'RTDN purchase without bookingId saved as unlinked');
+  await getQueue().add('payment.reconcile', { paymentId: String(pay._id) }, { jobId: jobId('reconcile', String(pay._id)), delayMs: RECONCILE_MIN * MIN });
+  return 'processed';
+}
+/** payment.reconcile: still unlinked after 15 min -> flag for admins (GET /admin/payments?status=unlinked). No auto-refund. */
+export async function reconcileUnlinked(paymentId: string) {
+  const pay = await paymentRepository.findOneAndUpdate({ _id: paymentId, status: 'unlinked', flaggedAt: { $exists: false } }, { $set: { flaggedAt: new Date() } }, { new: true });
+  if (pay) logger.error({ alert: 'payment_unlinked', paymentId, userId: String(pay.userId), orderId: pay.orderId }, 'ADMIN ALERT: Play purchase not linked to a booking');
+  return pay ? 'flagged' : 'ok';
+}
+/** Admin: link an unlinked purchase to one of the same user's bookings (re-reads the purchase from Play). */
+export async function linkPayment(paymentId: string, bookingId: string) {
+  const pay = await paymentRepository.findOne({ _id: paymentId, status: 'unlinked' });
+  if (!pay) throw new AppError(409, 'PAYMENT_NOT_UNLINKED');
+  const p = await getPlayClient().getProduct(pay.productId, pay.purchaseToken).catch((e) => { throw mapPlayError(e); });
+  const r = await finalizeTicket(String(pay.userId), bookingId, pay.productId, pay.purchaseToken, p); // 404 if the booking is not this user's
+  return { status: r.status, booking: bookingOut(r.booking) };
 }
 export async function onVoided(token: string) {
   const pay = await paymentRepository.findOneAndUpdate({ purchaseToken: token, status: { $ne: 'voided' } }, { status: 'voided', voidedAt: new Date() }, { new: true });
@@ -203,8 +233,8 @@ export async function syncVoided() {
 // ---------- app endpoints ----------
 /** POST /payments/play/verify. Returns HTTP-agnostic result; controller maps pending -> 202. */
 export async function verifyPurchase(uid: string, { bookingId, purchaseToken, productId, kind }: { bookingId?: string; purchaseToken: string; productId: string; kind: 'ticket' | 'chat_pass' }) {
-  const prev = await paymentRepository.findOne({ purchaseToken }).select('userId bookingId kind');
-  if (prev && (String(prev.userId) !== uid || prev.kind !== kind || (kind === 'ticket' && String(prev.bookingId) !== bookingId)))
+  const prev = await paymentRepository.findOne({ purchaseToken }).select('userId bookingId kind status');
+  if (prev && (String(prev.userId) !== uid || prev.kind !== kind || (kind === 'ticket' && prev.status !== 'unlinked' && String(prev.bookingId) !== bookingId)))
     throw new AppError(409, 'PURCHASE_ALREADY_USED');
   if (kind === 'chat_pass') return verifyChatPass(uid, productId, purchaseToken);
   const p = await getPlayClient().getProduct(productId, purchaseToken).catch((e) => { throw mapPlayError(e); });

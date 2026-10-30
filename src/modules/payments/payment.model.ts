@@ -7,15 +7,17 @@ const paymentSchema = new Schema({
   purchaseToken: { type: String, required: true },
   orderId: String,
   amountInPaise: { type: Number, default: 0 },
-  status: { type: String, enum: ['verified', 'refunded', 'refund_failed', 'voided'], default: 'verified' },
+  status: { type: String, enum: ['verified', 'unlinked', 'refunded', 'refund_failed', 'voided'], default: 'verified' },
   acknowledged: { type: Boolean, default: false },
   purchaseTime: Date,
   refundedAt: Date, voidedAt: Date,
+  /** Set by payment.reconcile when an unlinked purchase still has no booking: needs admin attention. */
+  flaggedAt: Date,
 }, { timestamps: true });
 // A purchase token can be redeemed exactly once.
 paymentSchema.index({ purchaseToken: 1 }, { unique: true });
 paymentSchema.index({ userId: 1, createdAt: -1 });
-paymentSchema.index({ status: 1, createdAt: -1 });
+paymentSchema.index({ status: 1, createdAt: -1 }); // also serves the admin 'unlinked' alert list
 paymentSchema.index({ bookingId: 1 });
 paymentSchema.index({ orderId: 1 }, { partialFilterExpression: { orderId: { $type: 'string' } } });
 paymentSchema.index({ acknowledged: 1, createdAt: 1 });

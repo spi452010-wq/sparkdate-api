@@ -6,6 +6,7 @@ import { processWebhookEvent } from '../modules/webhooks/webhooks.service';
 
 registerHandler('booking.expire', (d) => bookings.expireBooking(d.bookingId));
 registerHandler('payment.ack', (d) => payments.retryAck(d.paymentId));
+registerHandler('payment.reconcile', async (d) => { await payments.reconcileUnlinked(d.paymentId); });
 registerHandler('refund.retry', (d) => payments.retryRefund(d.paymentId));
 registerHandler('event.finalize', (d) => refunds.finalizeEvent(d.eventId));
 registerHandler('notify.reminder', (d) => bookings.sendReminder(d));

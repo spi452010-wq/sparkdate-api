@@ -1,6 +1,6 @@
 import { logger } from '../utils/logger';
 
-export type JobName = 'booking.expire' | 'payment.ack' | 'event.finalize' | 'webhook.process' | 'refund.retry'
+export type JobName = 'booking.expire' | 'payment.ack' | 'payment.reconcile' | 'event.finalize' | 'webhook.process' | 'refund.retry'
   | 'notify.reminder' | 'notify.chatPassExpiring' | 'voided.sync';
 export interface JobOpts { delayMs?: number; jobId?: string }
 export type Handler = (data: any) => Promise<void>;
