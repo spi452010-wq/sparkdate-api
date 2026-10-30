@@ -45,6 +45,17 @@ Status values: TODO / IN PROGRESS / BLOCKED / IN REVIEW / DONE (only mark DONE w
 
 Contract: docs/api/SPRINT2_API.md
 
+## Sprint 3 (API)
+| ID | Task | Owner | Status |
+|---|---|---|---|
+| S3-1 | Socket.IO `/live` gateway: JWT, booking auth, rate limits, Redis adapter | Node.js | IN REVIEW |
+| S3-2 | Round timer jobs, matching (score, no repeats/blocks, priority), reconnect grace | Node.js | IN REVIEW |
+| S3-3 | LiveKit per-date tokens (scoped grant, TTL) | Node.js | IN REVIEW (needs owner LiveKit keys) |
+| S3-4 | Decisions + atomic mutual connections, blocks API, attendance + datesCompleted into finalize | Node.js | IN REVIEW |
+| S3-5 | 300-socket load script (`npm run load:live`) | Node.js / QA | READY (run against staging) |
+
+Contract: docs/api/SPRINT3_API.md
+
 ## Later sprints
 - S2 Events + booking + payments · S3 Waiting room, matching, LiveKit calls · S4 Connections, chat, subscription, refunds, notifications
 
