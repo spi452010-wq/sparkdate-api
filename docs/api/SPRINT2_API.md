@@ -54,7 +54,7 @@ Types: booking_confirmed, event_reminder, event_cancelled, refund_processed, ref
 ## Webhook
 `POST /api/v1/webhooks/play` receives Pub/Sub push. It requires an OIDC bearer token whose audience is `PUBSUB_PUSH_AUDIENCE` and whose email is `PUBSUB_SA_EMAIL`, otherwise it returns 401.
 Messages are deduplicated by `messageId`. Messages from other packages are ignored. The handler returns 204 and processes the message in the `webhook.process` job.
-It handles subscription, one-time product, and voided purchase notifications. A one-time purchase without `obfuscatedExternalProfileId` (Flutter) is applied to the user's latest `pending` booking for an event with that `playProductId`. Voided purchases are also reconciled daily by the `voided.sync` job.
+It handles subscription, one-time product, and voided purchase notifications. A one-time purchase without `obfuscatedExternalProfileId` (Flutter) is applied only when the user has exactly one `pending` booking for an event with that `playProductId`; with zero or several it is not applied (logged) and the app's verify call with `bookingId` confirms it. Voided purchases are also reconciled daily by the `voided.sync` job.
 
 ## Admin (role admin only; hosts get 403)
 | Method | Path |

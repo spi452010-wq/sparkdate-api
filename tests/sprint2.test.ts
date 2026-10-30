@@ -224,6 +224,20 @@ describe('play verification', () => {
       expect(await Payment.countDocuments({ purchaseToken: 'tok-flutter-twice' })).toBe(1);
     });
   });
+  it('RTDN without bookingId never guesses between two pending bookings of the same product; app verify then confirms the right one', async () => {
+    const u = await appUser();
+    const b1 = (await book(u, await paidEvent()).expect(201)).body.booking;
+    const b2 = (await book(u, await paidEvent()).expect(201)).body.booking;
+    purchase('tok-ambiguous-1', u.id, b2.id, { obfuscatedExternalProfileId: undefined });
+    await push({ oneTimeProductNotification: { notificationType: 1, purchaseToken: 'tok-ambiguous-1', sku: 'event_ticket_199' } }).expect(204);
+    await q().runDue(Date.now(), 'webhook.process');
+    expect((await Booking.findById(b1.id))!.status).toBe('pending');
+    expect((await Booking.findById(b2.id))!.status).toBe('pending');
+    expect(await Payment.countDocuments({ purchaseToken: 'tok-ambiguous-1' })).toBe(0);
+    expect((await verify(u, ticket(b2.id, 'tok-ambiguous-1')).expect(200)).body.status).toBe('confirmed');
+    expect((await Booking.findById(b2.id))!.status).toBe('confirmed');
+    expect((await Booking.findById(b1.id))!.status).toBe('pending');
+  });
   it('hold expiry vs late purchase: re-holds if seat free, refunds if full', async () => {
     const eid = await paidEvent({ capacity: { male: 1, female: 1 } }); const u = await appUser(); const u2 = await appUser();
     const b = (await book(u, eid).expect(201)).body.booking;

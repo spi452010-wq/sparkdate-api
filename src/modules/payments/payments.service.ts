@@ -172,8 +172,10 @@ export async function onOneTimeRtdn(n: { notificationType: number; purchaseToken
   let bookingId = p.obfuscatedExternalProfileId;
   if (!bookingId) {
     const eventIds = await eventRepository.distinct('_id', { playProductId: n.sku });
-    const b = await bookingRepository.findOne({ userId, eventId: { $in: eventIds }, status: 'pending' }).sort({ createdAt: -1 }).select('_id');
-    bookingId = b ? String(b._id) : undefined;
+    const pending = await bookingRepository.find({ userId, eventId: { $in: eventIds }, status: 'pending' }).select('_id').limit(2);
+    // Never guess: only an unambiguous single pending booking is auto-confirmed. Otherwise the app's verify call (with bookingId) applies it.
+    if (pending.length !== 1) { logger.warn({ sku: n.sku, matches: pending.length }, 'RTDN purchase without bookingId left for app verify'); return 'ignored'; }
+    bookingId = String(pending[0]._id);
   }
   if (!isId(bookingId)) return 'ignored';
   if (await paymentRepository.exists({ purchaseToken: n.purchaseToken })) return 'ignored';
